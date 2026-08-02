@@ -1,0 +1,10 @@
+# PyInstaller / build
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+
+# Salidas locales
+*.log
+alerta_calibrar.png

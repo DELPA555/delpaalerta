@@ -1,0 +1,14 @@
+{
+  "region": "pantalla_completa",
+  "monitor": 0,
+  "color_rgb_min": [90, 200, 140],
+  "color_rgb_max": [150, 255, 200],
+  "area_min": 300,
+  "area_max": 560,
+  "redondez_min": 0.75,
+  "intervalo_scan_seg": 1.0,
+  "cooldown_alerta_seg": 3.0,
+  "beep_frecuencia_hz": 1000,
+  "beep_duracion_ms": 400,
+  "tolerancia_posicion_px": 12
+}
