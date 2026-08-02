@@ -3,11 +3,11 @@
 // círculo verde de mensaje nuevo. Corre en segundo plano (icono en la bandeja),
 // sin ventana visible, con auto-update por GitHub Releases.
 const path = require('path')
-const { app, Tray, Menu, nativeImage, powerMonitor, shell } = require('electron')
+const { app, Tray, Menu, nativeImage, powerMonitor, shell, ipcMain, BrowserWindow } = require('electron')
 const electronUpdater = require('electron-updater')
 const { autoUpdater } = electronUpdater
 
-const { createStore, readConfig, DATA_DIR } = require('./config')
+const { createStore, readConfig, configPath, logPath, DEFAULTS } = require('./config')
 const { log } = require('./logger')
 const capture = require('./capture')
 const { detect } = require('./detect')
@@ -22,6 +22,7 @@ let engine = null
 let loopTimer = null
 let corriendo = false
 let nextSlot = 0 // agenda global de reproducción (espaciado entre beeps)
+let settingsWin = null
 
 // ── Instancia única ───────────────────────────────────────────────────────────
 if (!app.requestSingleInstanceLock()) {
@@ -97,6 +98,7 @@ function buildMenu() {
   return Menu.buildFromTemplate([
     { label: `AlertaPantalla v${app.getVersion()}`, enabled: false },
     { type: 'separator' },
+    { label: '⚙ Opciones…', click: () => openSettings() },
     {
       label: cfg.pausado ? '▶ Reanudar vigilancia' : '⏸ Pausar vigilancia',
       click: () => {
@@ -117,9 +119,9 @@ function buildMenu() {
     { type: 'separator' },
     {
       label: 'Abrir configuración (config.json)',
-      click: () => shell.openPath(path.join(DATA_DIR, 'config.json'))
+      click: () => shell.openPath(configPath())
     },
-    { label: 'Ver log', click: () => shell.openPath(path.join(DATA_DIR, 'alerta.log')) },
+    { label: 'Ver log', click: () => shell.openPath(logPath()) },
     { label: 'Buscar actualizaciones', click: () => checkUpdates(true) },
     { type: 'separator' },
     {
@@ -141,6 +143,117 @@ function createTray() {
   tray.setToolTip('AlertaPantalla — vigilando')
   refreshTray()
   tray.on('double-click', () => player.play(sounds.resolve(cfg.sonido)))
+}
+
+// ── Ventana de Opciones ───────────────────────────────────────────────────────
+function openSettings() {
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    settingsWin.show()
+    settingsWin.focus()
+    return
+  }
+  settingsWin = new BrowserWindow({
+    width: 640,
+    height: 720,
+    title: 'AlertaPantalla — Opciones',
+    icon: path.join(__dirname, '..', 'assets', 'tray.png'),
+    autoHideMenuBar: true,
+    resizable: true,
+    backgroundColor: '#0b0f14',
+    webPreferences: { nodeIntegration: true, contextIsolation: false }
+  })
+  settingsWin.loadFile(path.join(__dirname, 'settings.html'))
+  settingsWin.on('closed', () => {
+    settingsWin = null
+  })
+}
+
+// Recalibra parámetros que afectan el runtime (ej. cambió el intervalo → reinicia el loop).
+function applyRuntime() {
+  cfg = readConfig(store)
+  startLoop()
+  refreshTray()
+}
+
+// Calibrador de color: captura la pantalla, la muestra a pantalla completa y
+// devuelve el RGB del píxel donde el usuario hace click.
+function runCalibrate() {
+  return new Promise(async (resolve) => {
+    let dataURL, w, h
+    try {
+      const shot = await capture.grabImage(cfg.monitor)
+      if (!shot) return resolve(null)
+      dataURL = shot.image.toDataURL()
+      w = shot.width
+      h = shot.height
+    } catch (e) {
+      log('Error calibrando: ' + (e && e.message))
+      return resolve(null)
+    }
+    const win = new BrowserWindow({
+      fullscreen: true,
+      frame: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      backgroundColor: '#000000',
+      webPreferences: { nodeIntegration: true, contextIsolation: false }
+    })
+    let done = false
+    const finish = (rgb) => {
+      if (done) return
+      done = true
+      ipcMain.removeAllListeners('calibrate:pick')
+      if (!win.isDestroyed()) win.close()
+      resolve(rgb)
+    }
+    ipcMain.once('calibrate:pick', (_e, rgb) => finish(rgb))
+    win.loadFile(path.join(__dirname, 'calibrate.html'))
+    win.webContents.once('did-finish-load', () => {
+      win.webContents.send('calibrate:image', { dataURL, w, h })
+    })
+    win.on('closed', () => finish(null))
+  })
+}
+
+// ── IPC de la UI ────────────────────────────────────────────────────────────
+function registerIpc() {
+  ipcMain.handle('ui:getState', () => ({
+    cfg,
+    version: app.getVersion(),
+    activos: engine ? engine.activos : 0,
+    catalog: sounds.getCatalog().map((s) => ({ key: s.key, name: s.name }))
+  }))
+  ipcMain.handle('ui:save', (_e, partial) => {
+    if (partial && typeof partial === 'object') {
+      for (const k of Object.keys(partial)) store.set(k, partial[k])
+    }
+    applyRuntime()
+    log('Opciones guardadas: ' + Object.keys(partial || {}).join(', '))
+    return cfg
+  })
+  ipcMain.handle('ui:reset', () => {
+    for (const k of Object.keys(DEFAULTS)) store.set(k, DEFAULTS[k])
+    applyRuntime()
+    log('Opciones restauradas a valores de fábrica')
+    return cfg
+  })
+  ipcMain.handle('ui:testSound', (_e, key) => {
+    player.play(sounds.resolve(key || cfg.sonido))
+  })
+  ipcMain.handle('ui:setPaused', (_e, val) => {
+    cfg.pausado = !!val
+    store.set('pausado', cfg.pausado)
+    refreshTray()
+    return cfg.pausado
+  })
+  ipcMain.handle('ui:calibrate', () => runCalibrate())
+  ipcMain.handle('ui:checkUpdates', () => checkUpdates(true))
+  ipcMain.on('ui:openConfigFile', () => shell.openPath(configPath()))
+  ipcMain.on('ui:openLog', () => shell.openPath(logPath()))
+  ipcMain.on('ui:quit', () => {
+    app.isQuitting = true
+    app.quit()
+  })
 }
 
 // ── Auto-update (GitHub Releases, igual patrón que LG Prop) ──────────────────
@@ -199,6 +312,7 @@ app.whenReady().then(() => {
   }
 
   player.createPlayer()
+  registerIpc()
   createTray()
   setupUpdater()
   startLoop()

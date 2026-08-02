@@ -1,18 +1,18 @@
 'use strict'
-// Log simple a C:\ProgramData\AlertaPantalla\alerta.log con rotación básica (~1 MB).
+// Log simple a %APPDATA%\AlertaPantalla\alerta.log con rotación básica (~1 MB).
 const fs = require('fs')
-const { LOG_PATH, ensureDataDir } = require('./config')
+const { logPath, ensureDataDir } = require('./config')
 
 const MAX_BYTES = 1_000_000
 
-function rotarSiHaceFalta() {
+function rotarSiHaceFalta(p) {
   try {
-    const st = fs.statSync(LOG_PATH)
+    const st = fs.statSync(p)
     if (st.size > MAX_BYTES) {
       try {
-        fs.renameSync(LOG_PATH, LOG_PATH + '.1')
+        fs.renameSync(p, p + '.1')
       } catch (_) {
-        fs.truncateSync(LOG_PATH, 0)
+        fs.truncateSync(p, 0)
       }
     }
   } catch (_) {
@@ -22,11 +22,12 @@ function rotarSiHaceFalta() {
 
 function log(msg) {
   ensureDataDir()
+  const p = logPath()
   const ts = new Date().toISOString().replace('T', ' ').slice(0, 19)
   const linea = `${ts}  ${msg}\n`
   try {
-    rotarSiHaceFalta()
-    fs.appendFileSync(LOG_PATH, linea)
+    rotarSiHaceFalta(p)
+    fs.appendFileSync(p, linea)
   } catch (_) {
     /* si falla el log no rompemos la app */
   }

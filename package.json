@@ -1,6 +1,6 @@
 {
   "name": "alertapantalla",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "AlertaPantalla — avisa con un sonido cuando aparece un círculo verde de mensaje nuevo en la pantalla",
   "author": "DELPA",
   "main": "src/main.js",

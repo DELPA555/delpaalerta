@@ -46,8 +46,9 @@ No se usan tonos de marcas por derechos de autor.
 
 ## Configuración
 
-`C:\ProgramData\AlertaPantalla\config.json` (se crea solo; editable sin
-recompilar, los cambios se toman al reiniciar la app):
+`%APPDATA%\AlertaPantalla\config.json` (se crea solo; editable sin recompilar,
+los cambios se toman al reiniciar la app). Lo más cómodo es editarlo desde la
+ventana **Opciones** (ícono de la bandeja → ⚙ Opciones…):
 
 | Clave | Qué es |
 |-------|--------|
@@ -64,7 +65,7 @@ recompilar, los cambios se toman al reiniciar la app):
 | `segundos_inactividad_para_escalar` | Idle mínimo para escalar (default 20) |
 | `pausado` | `true` para no alertar |
 
-**Log:** `C:\ProgramData\AlertaPantalla\alerta.log` (inicio, alertas y updates).
+**Log:** `%APPDATA%\AlertaPantalla\alerta.log` (inicio, alertas y updates).
 
 ---
 

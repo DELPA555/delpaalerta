@@ -36,4 +36,23 @@ async function grab(monitorIdx) {
   return { data: img.toBitmap(), width: size.width, height: size.height }
 }
 
-module.exports = { grab }
+// Igual que grab() pero devuelve el nativeImage completo (para el calibrador:
+// dataURL para mostrar + tamaño). Devuelve { image, width, height } o null.
+async function grabImage(monitorIdx) {
+  const display = pickDisplay(monitorIdx)
+  const scale = display.scaleFactor || 1
+  const width = Math.round(display.size.width * scale)
+  const height = Math.round(display.size.height * scale)
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: { width, height }
+  })
+  if (!sources.length) return null
+  let src = sources.find((s) => String(s.display_id) === String(display.id)) || sources[0]
+  const img = src.thumbnail
+  if (!img || img.isEmpty()) return null
+  const size = img.getSize()
+  return { image: img, width: size.width, height: size.height }
+}
+
+module.exports = { grab, grabImage }

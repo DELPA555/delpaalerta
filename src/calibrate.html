@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Calibrar color</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #000; cursor: crosshair; }
+      #shot { width: 100vw; height: 100vh; object-fit: fill; display: block; user-select: none; -webkit-user-drag: none; }
+      #hint {
+        position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+        background: rgba(10,14,20,.85); color: #79e4aa; font-family: "Segoe UI", sans-serif;
+        font-size: 14px; padding: 8px 16px; border-radius: 999px; pointer-events: none;
+        border: 1px solid rgba(121,228,170,.4);
+      }
+    </style>
+  </head>
+  <body>
+    <img id="shot" />
+    <div id="hint">Hacé click sobre el círculo verde · Esc para cancelar</div>
+    <script>
+      const { ipcRenderer } = require('electron')
+      const img = document.getElementById('shot')
+      let W = 0, H = 0
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })
+
+      ipcRenderer.on('calibrate:image', (_e, { dataURL, w, h }) => {
+        W = w; H = h
+        canvas.width = w; canvas.height = h
+        img.onload = () => ctx.drawImage(img, 0, 0, w, h)
+        img.src = dataURL
+      })
+
+      img.addEventListener('click', (e) => {
+        const rect = img.getBoundingClientRect()
+        const px = Math.round(((e.clientX - rect.left) / rect.width) * W)
+        const py = Math.round(((e.clientY - rect.top) / rect.height) * H)
+        try {
+          const d = ctx.getImageData(Math.max(0, Math.min(W - 1, px)), Math.max(0, Math.min(H - 1, py)), 1, 1).data
+          ipcRenderer.send('calibrate:pick', { r: d[0], g: d[1], b: d[2] })
+        } catch (_) {
+          ipcRenderer.send('calibrate:pick', null)
+        }
+      })
+
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') ipcRenderer.send('calibrate:pick', null)
+      })
+    </script>
+  </body>
+</html>
