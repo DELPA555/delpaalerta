@@ -188,11 +188,14 @@ app.whenReady().then(() => {
   cfg = readConfig(store)
   engine = new AlertEngine()
 
-  // Arranque automático al iniciar sesión (por usuario)
-  try {
-    app.setLoginItemSettings({ openAtLogin: true, args: [] })
-  } catch (_) {
-    /* noop */
+  // Arranque automático al iniciar sesión (por usuario). Sólo en la app
+  // instalada; en dev no queremos registrar un login item de electron.exe.
+  if (app.isPackaged) {
+    try {
+      app.setLoginItemSettings({ openAtLogin: true, args: [] })
+    } catch (_) {
+      /* noop */
+    }
   }
 
   player.createPlayer()
