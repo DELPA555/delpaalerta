@@ -1,0 +1,39 @@
+'use strict'
+// Captura de pantalla usando el desktopCapturer nativo de Electron (sin binarios
+// externos). Devuelve el frame en crudo (BGRA) a resolución física para que la
+// calibración de tamaño (~23x23 px) coincida con la captura real del usuario.
+const { desktopCapturer, screen } = require('electron')
+
+// Elige la pantalla a capturar según config.monitor (0 = principal).
+function pickDisplay(monitorIdx) {
+  const displays = screen.getAllDisplays()
+  const primary = screen.getPrimaryDisplay()
+  if (!monitorIdx || monitorIdx <= 0) return primary
+  const i = monitorIdx - 1
+  return displays[i] || primary
+}
+
+// Captura la pantalla elegida. Devuelve { data: Buffer(BGRA), width, height } o null.
+async function grab(monitorIdx) {
+  const display = pickDisplay(monitorIdx)
+  const scale = display.scaleFactor || 1
+  const width = Math.round(display.size.width * scale)
+  const height = Math.round(display.size.height * scale)
+
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: { width, height }
+  })
+  if (!sources.length) return null
+
+  // Machea la fuente con el display elegido (por display_id); si no, la primera.
+  let src = sources.find((s) => String(s.display_id) === String(display.id))
+  if (!src) src = sources[0]
+
+  const img = src.thumbnail
+  if (!img || img.isEmpty()) return null
+  const size = img.getSize()
+  return { data: img.toBitmap(), width: size.width, height: size.height }
+}
+
+module.exports = { grab }

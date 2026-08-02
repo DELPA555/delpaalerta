@@ -1,10 +1,5 @@
-# PyInstaller / build
-build/
-dist/
-*.spec
-__pycache__/
-*.pyc
-
-# Salidas locales
+node_modules/
+dist-installer/
 *.log
-alerta_calibrar.png
+npm-debug.log*
+.DS_Store

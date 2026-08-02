@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>AlertaPantalla — player</title>
+  </head>
+  <body>
+    <script>
+      const { ipcRenderer } = require('electron')
+      // Reproduce cada pedido de sonido de forma independiente (permite solapes
+      // mínimos si llegan muy juntos; el espaciado real lo maneja el main).
+      ipcRenderer.on('play', (_e, href) => {
+        try {
+          const a = new Audio(href)
+          a.volume = 1.0
+          a.play().catch(() => {})
+        } catch (_) {
+          /* noop */
+        }
+      })
+    </script>
+  </body>
+</html>

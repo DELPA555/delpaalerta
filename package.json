@@ -1,0 +1,68 @@
+{
+  "name": "alertapantalla",
+  "version": "1.0.0",
+  "description": "AlertaPantalla — avisa con un sonido cuando aparece un círculo verde de mensaje nuevo en la pantalla",
+  "author": "DELPA",
+  "main": "src/main.js",
+  "scripts": {
+    "gen-assets": "node scripts/gen-assets.js",
+    "start": "electron .",
+    "build:win": "electron-builder --win",
+    "publish:win": "electron-builder --win --publish always"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.delpa.alertapantalla",
+    "productName": "AlertaPantalla",
+    "directories": {
+      "output": "dist-installer",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/sounds",
+        "to": "sounds"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "DELPA555",
+        "repo": "delpaalerta",
+        "releaseType": "release"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "AlertaPantalla-Setup-${version}.${ext}",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AlertaPantalla"
+    }
+  }
+}

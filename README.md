@@ -1,89 +1,92 @@
 # AlertaPantalla
 
-Vigila la pantalla y **suena un beep cuando aparece un círculo verde de "no
-leídos" nuevo** (el que muestra la app de escritorio remoto / WhatsApp Web al
-lado de un contacto). Pensado para PCs de casino online donde la app espejada
-no tiene aviso de sonido.
+App de **Windows en segundo plano** que vigila la pantalla y **suena cuando
+aparece un círculo verde de mensaje nuevo** (el de "no leídos" al lado de un
+contacto). Pensada para PCs donde se comparten varias ventanas de WhatsApp por
+escritorio remoto sin audio.
 
-Es **un solo `.exe`** que hace todo: se instala, se autoarranca para todos los
-usuarios, vigila, y se puede recalibrar y desinstalar.
+Reescrita en **Electron** (antes Python/PyInstaller) para tener
+**auto-actualización** por GitHub Releases, igual que el resto de los proyectos.
+
+- Corre oculta, con **ícono en la bandeja** (pausar / elegir sonido / salir).
+- Arranca sola al iniciar sesión.
+- Se **actualiza sola** desde GitHub (chequea al abrir y cada 6 h, descarga e
+  instala sin intervención).
 
 ---
 
-## 1. Compilar el ejecutable (una sola vez, en tu PC de desarrollo)
+## Cómo funciona
 
-Necesitás Python instalado **solo en la máquina donde compilás** (no en las PCs
-destino). Doble click en:
+1. Captura la pantalla ~1 vez por segundo (`desktopCapturer` de Electron).
+2. Detecta el círculo verde por **color + área + redondez** (máscara RGB con
+   tolerancia → componentes conexos → filtro por área px² y aspecto 1:1).
+   Calibrado: RGB **(121, 228, 170)**, ~**23×23 px**.
+3. Sigue cada círculo por **posición** entre frames: si aparece uno **nuevo**,
+   alerta.
 
-```
-build.bat
-```
+### Alerta escalonada por tiempo sin atender
+Cada círculo mantiene su propio contador desde que apareció. La escala
+(`escalada` en el config) es una lista `{segundos, repeticiones}`; al cruzar
+cada umbral dispara una tanda con esa cantidad de beeps. Pasado el último
+escalón, suma 1 repetición cada 2 minutos. Al atender (desaparece el círculo)
+se resetea. Círculos simultáneos escalan independientes.
 
-Genera **`dist\AlertaPantalla.exe`** (standalone, sin ventana de consola).
+### Sólo escala si la PC está inactiva
+La escalada extra aplica sólo si no hubo actividad de mouse/teclado por al menos
+`segundos_inactividad_para_escalar` (default 20), usando
+`powerMonitor.getSystemIdleTime()`. Con actividad reciente → sólo 1 alerta base.
 
-## 2. Instalar en cada PC (una por turno/puesto)
+### Sonidos seleccionables
+Catálogo con 3 tonos propios royalty-free (`clasico`, `doble`, `campana`) + los
+sonidos nativos de Windows presentes en `C:\Windows\Media`. Se elige desde el
+menú de la bandeja (**Sonido de alerta**, con previsualización al seleccionar).
+No se usan tonos de marcas por derechos de autor.
 
-Copiá `AlertaPantalla.exe` a la PC y **hacé doble click**. Va a preguntar si
-querés instalarlo; aceptá el aviso de administrador (UAC). Eso:
+---
 
-- Copia el `.exe` a `C:\ProgramData\AlertaPantalla\`
-- Crea el arranque automático para **todos los usuarios**
-  (`...\Start Menu\Programs\StartUp\AlertaPantalla.lnk`)
-- Deja el programa **corriendo ya mismo**
-- Crea la config de fábrica en `C:\ProgramData\AlertaPantalla\config.json`
+## Configuración
 
-Desde ese momento arranca solo cada vez que alguien inicia sesión, sin abrir nada.
-
-> También podés instalar sin doble click con:  `AlertaPantalla.exe --instalar`
-
-## 3. Recalibrar el color (si cambia el diseño)
-
-```
-AlertaPantalla.exe --calibrar
-```
-
-Saca una captura real; **hacé click** sobre el círculo verde para ver su RGB
-exacto (te sugiere el rango para el config), o **arrastrá** para marcar una
-región a vigilar. `Esc` para salir. Después pegá los valores en `config.json`.
-
-## 4. Ajustar sin recompilar
-
-Editá `C:\ProgramData\AlertaPantalla\config.json`:
+`C:\ProgramData\AlertaPantalla\config.json` (se crea solo; editable sin
+recompilar, los cambios se toman al reiniciar la app):
 
 | Clave | Qué es |
 |-------|--------|
-| `region` | `"pantalla_completa"` o `{"top":..,"left":..,"width":..,"height":..}` |
-| `monitor` | `0` = todos, `1` = principal, `2` = segundo… |
-| `color_rgb_min` / `color_rgb_max` | Rango de verde a detectar (calibrado: 121,228,170) |
-| `area_min` / `area_max` | Tamaño del círculo en px² (23×23 ≈ 415) |
-| `redondez_min` | Aspecto mínimo `min(w,h)/max(w,h)` (1.0 = círculo perfecto) |
-| `intervalo_scan_seg` | Cada cuánto escanea (~1 s) |
-| `cooldown_alerta_seg` | Mínimo entre alertas (anti-loop) |
-| `beep_frecuencia_hz` / `beep_duracion_ms` | Tono y duración del beep |
-| `tolerancia_posicion_px` | Cuánto se puede mover un círculo y seguir siendo "el mismo" |
+| `monitor` | `0/1` = principal, `2` = segundo… |
+| `region` | `"pantalla_completa"` o `{top,left,width,height}` (px físicos) |
+| `color_rgb_min` / `color_rgb_max` | Rango de verde a detectar |
+| `area_min` / `area_max` | Tamaño del círculo en px² |
+| `redondez_min` | Aspecto mínimo `min(w,h)/max(w,h)` |
+| `intervalo_scan_seg` | Cada cuánto escanea |
+| `tolerancia_posicion_px` | Cuánto se puede mover y seguir siendo "el mismo" |
+| `sonido` | `"clasico"` / `"doble"` / `"campana"` / `"win:archivo.wav"` |
+| `espaciado_repeticiones_ms` | Separación entre beeps (default 300) |
+| `escalada` | Lista `[{segundos,repeticiones}, …]` |
+| `segundos_inactividad_para_escalar` | Idle mínimo para escalar (default 20) |
+| `pausado` | `true` para no alertar |
 
-Los cambios se toman al reiniciar el programa (o la sesión).
-
-## 5. Log
-
-`C:\ProgramData\AlertaPantalla\alerta.log` — fecha/hora de inicio y de cada alerta.
-
-## 6. Desinstalar
-
-```
-AlertaPantalla.exe --desinstalar
-```
-
-Quita el arranque automático, corta el proceso y borra `C:\ProgramData\AlertaPantalla`.
+**Log:** `C:\ProgramData\AlertaPantalla\alerta.log` (inicio, alertas y updates).
 
 ---
 
-## Notas técnicas
+## Desarrollo
 
-- Captura con **mss**, detección con **OpenCV** (máscara por color →
-  componentes conexos → filtro por área y aspecto 1:1) y **numpy**.
-- Un círculo se considera **nuevo** si su centro no coincide (dentro de
-  `tolerancia_posicion_px`) con ninguno del frame anterior. Si a un contador
-  existente solo le sube el número (mismo lugar), no vuelve a sonar.
-- Beep con **winsound** (estándar de Windows, sin dependencias).
-- El `.exe` guarda una sola instancia activa (mutex) para no duplicar el beep.
+```bash
+npm install
+npm run gen-assets   # regenera iconos y wavs (ya vienen commiteados)
+npm start            # corre en dev (sin auto-update)
+```
+
+## Publicar una versión (auto-update)
+
+Igual que LG Prop:
+
+1. Subí `version` en `package.json`.
+2. `set GH_TOKEN=<token con permiso repo>` y `npm run publish:win`.
+
+Publica el instalador + `latest.yml` en **GitHub Releases**
+(`DELPA555/delpaalerta`). Las PCs con la app instalada se actualizan solas.
+
+## Instalar en una PC
+
+Descargá `AlertaPantalla-Setup-<version>.exe` del release y ejecutalo. Queda en
+la bandeja y arranca solo al iniciar sesión.
