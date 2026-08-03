@@ -32,6 +32,21 @@ cada umbral dispara una tanda con esa cantidad de beeps. Pasado el último
 escalón, suma 1 repetición cada 2 minutos. Al atender (desaparece el círculo)
 se resetea. Círculos simultáneos escalan independientes.
 
+### Banner emergente (franja superior)
+Además del círculo verde, detecta un **banner** que aparece arriba, por **cambio
+de píxeles** en esa franja (sin color calibrado aún). Región y sensibilidad
+configurables; desactivado por defecto.
+
+### Ventanas perdidas o minimizadas
+Vigila una lista de títulos esperados (ej. "cargas 1".."cargas 4", "Retiros"):
+si una **falta o queda minimizada** más de X segundos, alerta distinto ("Se
+perdió de vista: …") y avisa la recuperación. Configurable; sin títulos = no vigila.
+
+### Respaldo visual si está muteado
+Al disparar cualquier alerta, si el **volumen está muteado o por debajo del
+umbral**, muestra una ventana roja **always-on-top** (sin robar el foco) + hace
+**parpadear la barra de tareas**. Umbral y duración configurables.
+
 ### Sólo escala si la PC está inactiva
 La escalada extra aplica sólo si no hubo actividad de mouse/teclado por al menos
 `segundos_inactividad_para_escalar` (default 20), usando

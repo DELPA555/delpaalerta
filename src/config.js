@@ -33,6 +33,24 @@ const DEFAULTS = {
   // La escalada sólo aplica si la PC estuvo inactiva al menos estos segundos
   segundos_inactividad_para_escalar: 20,
 
+  // (5) Banner emergente en la franja superior (por cambio de píxeles)
+  banner_habilitado: false,
+  banner_region: { top: 0, left: 0, width: 0, height: 110 }, // width 0 = todo el ancho
+  banner_umbral_pixel: 40, // delta de luminancia por píxel para contarlo "cambiado"
+  banner_sensibilidad: 0.12, // fracción de la franja que debe cambiar
+  banner_cooldown_seg: 6,
+
+  // (6) Ventanas esperadas a monitorear (vacío = no monitorear)
+  ventanas_titulos: [], // ej. ["cargas 1","cargas 2","cargas 3","cargas 4","Retiros"]
+  ventanas_intervalo_seg: 10,
+  ventanas_umbral_seg: 15, // cuánto tiempo perdida/minimizada antes de alertar
+  ventanas_cooldown_seg: 30,
+
+  // (7) Respaldo visual si el sistema está muteado o con volumen bajo
+  respaldo_visual_habilitado: true,
+  volumen_umbral_pct: 25,
+  respaldo_visual_seg: 6,
+
   pausado: false
 }
 

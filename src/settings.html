@@ -63,6 +63,8 @@
       .pill.off { background: rgba(239,90,90,.15); color: #ef5a5a; }
       .hint { color: var(--ink3); font-size: 11px; margin-top: 6px; }
       .topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+      .chk { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 13px; margin: 0; }
+      .chk input { width: auto; }
     </style>
   </head>
   <body>
@@ -166,6 +168,28 @@
         </div>
       </div>
 
+      <div class="card">
+        <h2>Detección avanzada</h2>
+        <label class="chk"><input type="checkbox" id="banner_habilitado" /> Detectar banner emergente (franja superior, por cambio de píxeles)</label>
+        <label style="margin-top:10px">Ventanas a vigilar (separadas por coma; vacío = no vigilar)</label>
+        <input id="ventanas_titulos" placeholder="cargas 1, cargas 2, cargas 3, cargas 4, Retiros" />
+        <div class="grid2" style="margin-top:10px">
+          <div>
+            <label>Aviso si falta/minimizada (seg)</label>
+            <input id="ventanas_umbral_seg" type="number" min="1" />
+          </div>
+          <div>
+            <label>Chequeo de ventanas (seg)</label>
+            <input id="ventanas_intervalo_seg" type="number" min="3" />
+          </div>
+        </div>
+        <label class="chk" style="margin-top:12px"><input type="checkbox" id="respaldo_visual_habilitado" /> Respaldo visual si el volumen está muteado o bajo</label>
+        <div style="width:160px;margin-top:8px">
+          <label>Umbral de volumen (%)</label>
+          <input id="volumen_umbral_pct" type="number" min="0" max="100" />
+        </div>
+      </div>
+
       <div class="btns" style="margin-top:4px">
         <button id="btnSave" class="primary">Guardar cambios</button>
         <button id="btnReset" class="danger">Restaurar de fábrica</button>
@@ -216,6 +240,13 @@
           $(k).value = cfg[k]
         }
         $('escalada').value = JSON.stringify(cfg.escalada, null, 2)
+        // detección avanzada
+        $('banner_habilitado').checked = !!cfg.banner_habilitado
+        $('respaldo_visual_habilitado').checked = cfg.respaldo_visual_habilitado !== false
+        $('ventanas_titulos').value = (cfg.ventanas_titulos || []).join(', ')
+        $('ventanas_umbral_seg').value = cfg.ventanas_umbral_seg
+        $('ventanas_intervalo_seg').value = cfg.ventanas_intervalo_seg
+        $('volumen_umbral_pct').value = cfg.volumen_umbral_pct
         setEstado(cfg.pausado)
         paintSwatches()
       }
@@ -237,7 +268,13 @@
           redondez_min: parseFloat($('redondez_min').value) || 0,
           tolerancia_posicion_px: parseInt($('tolerancia_posicion_px').value, 10) || 1,
           espaciado_repeticiones_ms: parseInt($('espaciado_repeticiones_ms').value, 10) || 0,
-          segundos_inactividad_para_escalar: parseInt($('segundos_inactividad_para_escalar').value, 10) || 0
+          segundos_inactividad_para_escalar: parseInt($('segundos_inactividad_para_escalar').value, 10) || 0,
+          banner_habilitado: $('banner_habilitado').checked,
+          respaldo_visual_habilitado: $('respaldo_visual_habilitado').checked,
+          ventanas_titulos: $('ventanas_titulos').value.split(',').map((s) => s.trim()).filter(Boolean),
+          ventanas_umbral_seg: parseInt($('ventanas_umbral_seg').value, 10) || 15,
+          ventanas_intervalo_seg: parseInt($('ventanas_intervalo_seg').value, 10) || 10,
+          volumen_umbral_pct: parseInt($('volumen_umbral_pct').value, 10) || 25
         }
         try {
           const esc = JSON.parse($('escalada').value)

@@ -14,6 +14,10 @@ const { detect } = require('./detect')
 const { AlertEngine } = require('./tracker')
 const sounds = require('./sounds')
 const player = require('./player')
+const { BannerDetector } = require('./detectBanner')
+const { WindowsWatcher } = require('./windowsWatch')
+const { getVolume } = require('./volume')
+const visualAlert = require('./visualAlert')
 const licVerify = require('./license/verify')
 const { machineId, machineShort } = require('./license/machineId')
 const licStore = require('./license/store')
@@ -22,6 +26,9 @@ let tray = null
 let store = null
 let cfg = null
 let engine = null
+let banner = null
+let winWatcher = null
+let windowsTimer = null
 let loopTimer = null
 let corriendo = false
 let nextSlot = 0 // agenda global de reproducción (espaciado entre beeps)
@@ -49,6 +56,22 @@ function scheduleAlert(reps) {
   }
 }
 
+// Punto único de alerta: suena y, si el sistema está muteado / con volumen bajo,
+// muestra el respaldo visual. No bloquea el loop (el chequeo de volumen es async).
+function dispararAlerta(mensaje, reps) {
+  scheduleAlert(reps || 1)
+  if (!cfg.respaldo_visual_habilitado) return
+  getVolume()
+    .then((v) => {
+      const umbral = Number(cfg.volumen_umbral_pct) || 25
+      if (v.muted || v.pct <= umbral) {
+        visualAlert.show(mensaje, cfg.respaldo_visual_seg)
+        log('[respaldo visual] ' + mensaje + ' (vol ' + (v.muted ? 'MUTE' : v.pct + '%') + ')')
+      }
+    })
+    .catch(() => {})
+}
+
 // ── Loop de detección ─────────────────────────────────────────────────────────
 async function tick() {
   if (cfg.pausado || corriendo) return
@@ -61,8 +84,13 @@ async function tick() {
       const fires = engine.update(blobs, Date.now(), idle, cfg)
       if (fires.length) {
         const total = fires.reduce((a, f) => a + f.reps, 0)
-        for (const f of fires) scheduleAlert(f.reps)
-        log(`ALERTA: ${fires.length} tanda(s), ${total} repetición(es). círculos=${engine.activos} idle=${idle}s sonido=${cfg.sonido}`)
+        for (const f of fires) dispararAlerta('Mensaje nuevo (círculo verde)', f.reps)
+        log(`ALERTA verde: ${fires.length} tanda(s), ${total} repetición(es). círculos=${engine.activos} idle=${idle}s sonido=${cfg.sonido}`)
+      }
+      // (5) Banner emergente, sobre el mismo frame (no captura de nuevo)
+      if (banner.check(frame, cfg, Date.now())) {
+        dispararAlerta('Notificación emergente (banner)', 1)
+        log('ALERTA banner: cambio brusco en la franja superior')
       }
     }
   } catch (e) {
@@ -76,7 +104,24 @@ function startLoop() {
   if (loopTimer) clearInterval(loopTimer)
   const ms = Math.max(200, Number(cfg.intervalo_scan_seg) * 1000 || 1000)
   loopTimer = setInterval(tick, ms)
+  // (6) Monitoreo de ventanas esperadas (timer aparte, más lento)
+  if (windowsTimer) clearInterval(windowsTimer)
+  const wms = Math.max(3000, (Number(cfg.ventanas_intervalo_seg) || 10) * 1000)
+  windowsTimer = setInterval(() => {
+    winWatcher.check(cfg, (msg) => dispararAlerta(msg, 1)).catch(() => {})
+  }, wms)
   log(`Vigilancia iniciada. intervalo=${ms}ms monitor=${cfg.monitor} sonido=${cfg.sonido} pausado=${cfg.pausado}`)
+}
+
+function stopLoop() {
+  if (loopTimer) {
+    clearInterval(loopTimer)
+    loopTimer = null
+  }
+  if (windowsTimer) {
+    clearInterval(windowsTimer)
+    windowsTimer = null
+  }
 }
 
 // ── Bandeja del sistema ───────────────────────────────────────────────────────
@@ -299,6 +344,10 @@ function openActivation() {
 
 // Evalúa la licencia guardada (firma + vigencia + atadura a esta PC).
 function checkLicense() {
+  // Bypass SOLO para desarrollo (nunca en la app empaquetada).
+  if (!app.isPackaged && process.env.DELPA_TEST_UNLOCK) {
+    return { ok: true, funciona: true, estado: 'activa', cliente: 'DEV', expira: '2099-01-01', avisar: false, mensaje: 'DEV unlock' }
+  }
   const st = licStore.get()
   if (!st.code) {
     return { ok: false, funciona: false, estado: 'sin_activar', mensaje: 'Activá tu licencia para empezar.' }
@@ -328,10 +377,7 @@ function applyLicense() {
     }
     log('[licencia] ' + (licenseState.mensaje || licenseState.estado))
   } else {
-    if (loopTimer) {
-      clearInterval(loopTimer)
-      loopTimer = null
-    }
+    stopLoop()
     log('[licencia] ' + licenseState.mensaje + ' → vigilancia detenida')
     openActivation()
   }
@@ -385,6 +431,8 @@ app.whenReady().then(() => {
   store = createStore()
   cfg = readConfig(store)
   engine = new AlertEngine()
+  banner = new BannerDetector()
+  winWatcher = new WindowsWatcher()
 
   // Arranque automático al iniciar sesión (por usuario). Sólo en la app
   // instalada; en dev no queremos registrar un login item de electron.exe.
