@@ -20,20 +20,36 @@ function resolveRegion(cfg, width, height) {
   return { x0: 0, y0: 0, x1: width, y1: height }
 }
 
-function detect(frame, cfg) {
+// ¿El píxel (x,y) del frame cae dentro de alguna zona de exclusión?
+function enExclusion(x, y, ex) {
+  for (let i = 0; i < ex.length; i++) {
+    const r = ex[i]
+    if (x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1) return true
+  }
+  return false
+}
+
+// exclusions: lista de rectángulos { x0, y0, x1, y1 } en coordenadas del FRAME.
+// Los píxeles verdes dentro de esas zonas se ignoran (no forman blobs) → filtro
+// previo para eliminar falsos positivos (ej. badges fijos de la barra inferior
+// de WhatsApp). Es un extra opcional: sin exclusiones, la detección es idéntica.
+function detect(frame, cfg, exclusions) {
   const { data, width, height } = frame
   const [rMin, gMin, bMin] = cfg.color_rgb_min
   const [rMax, gMax, bMax] = cfg.color_rgb_max
   const areaMin = cfg.area_min
   const areaMax = cfg.area_max
   const redondezMin = cfg.redondez_min
+  const ex = Array.isArray(exclusions) ? exclusions : []
+  const hayEx = ex.length > 0
 
   const { x0, y0, x1, y1 } = resolveRegion(cfg, width, height)
   const rw = x1 - x0
   const rh = y1 - y0
   const mask = new Uint8Array(rw * rh)
 
-  // 1) Máscara (coordenadas locales a la región)
+  // 1) Máscara (coordenadas locales a la región). La comprobación de exclusión
+  //    sólo se hace para píxeles ya verdes (que son pocos), así que es barata.
   for (let y = y0; y < y1; y++) {
     let o = (y * width + x0) * 4
     let mi = (y - y0) * rw
@@ -42,7 +58,7 @@ function detect(frame, cfg) {
       const g = data[o + 1]
       const r = data[o + 2]
       if (r >= rMin && r <= rMax && g >= gMin && g <= gMax && b >= bMin && b <= bMax) {
-        mask[mi] = 1
+        if (!hayEx || !enExclusion(x, y, ex)) mask[mi] = 1
       }
     }
   }

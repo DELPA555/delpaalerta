@@ -51,6 +51,18 @@ const DEFAULTS = {
   volumen_umbral_pct: 25,
   respaldo_visual_seg: 6,
 
+  // Zonas de exclusión de la detección de círculo verde (elimina falsos
+  // positivos, ej. la barra inferior de WhatsApp con badges verdes fijos).
+  // Es un filtro previo: los píxeles verdes dentro de estas zonas se ignoran.
+  exclusion_habilitado: false,
+  // Zonas relativas a CADA ventana (fracciones 0..1 del ancho/alto de la ventana).
+  // Por defecto, la franja inferior (barra Chats/Llamadas/Novedades/Herramientas):
+  exclusion_zonas_ventana: [{ top: 0.9, left: 0, width: 1, height: 0.1 }],
+  // A qué ventanas aplicar las zonas relativas (por título; vacío = usa ventanas_titulos):
+  exclusion_titulos: [],
+  // Zonas absolutas en píxeles del frame capturado (opcional): { top,left,width,height }
+  exclusion_zonas_absolutas: [],
+
   pausado: false
 }
 

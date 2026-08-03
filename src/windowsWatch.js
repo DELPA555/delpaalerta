@@ -1,10 +1,11 @@
 'use strict'
-// Monitoreo de ventanas esperadas (ej. "cargas 1".."cargas 4", "Retiros").
-// Para cada título: verifica si existe, si está minimizada y si está en primer
-// plano, enumerando las ventanas de nivel superior vía PowerShell/Win32 (sin
-// dependencias nativas). Si una ventana falta o queda minimizada más de
-// `ventanas_umbral_seg`, dispara una alerta distinta que se repite mientras
-// persista. Al restaurarse, se resetea y se loguea la recuperación.
+// Enumeración de ventanas top-level (título, minimizada, primer plano y BOUNDS)
+// vía PowerShell + Win32, sin dependencias nativas. Se usa para:
+//   - Feature 6: avisar si una ventana esperada falta o queda minimizada.
+//   - Zonas de exclusión: ubicar cada ventana de WhatsApp para excluir su barra
+//     inferior de la detección de círculo verde (relativo a cada ventana).
+// La enumeración se cachea (refresh() en un timer lento) para no llamar a
+// PowerShell en el loop de detección de 1 s.
 const { execFile } = require('child_process')
 
 const PS = `
@@ -14,14 +15,18 @@ using System;
 using System.Text;
 using System.Runtime.InteropServices;
 public class WinEnum {
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
   [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr l);
   [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
   [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] static extern int GetWindowTextLength(IntPtr h);
   [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr c);
   delegate bool EnumProc(IntPtr h, IntPtr l);
   public static string List() {
+    try { SetProcessDpiAwarenessContext((IntPtr)(-4)); } catch {} // per-monitor v2 → coords físicas
     IntPtr fg = GetForegroundWindow();
     StringBuilder outp = new StringBuilder();
     EnumWindows((h,l)=>{
@@ -29,7 +34,9 @@ public class WinEnum {
       int len=GetWindowTextLength(h); if(len==0) return true;
       StringBuilder t=new StringBuilder(len+1); GetWindowText(h,t,t.Capacity);
       string title=t.ToString().Replace("\t"," ").Replace("\n"," ");
-      outp.Append(title).Append("\t").Append(IsIconic(h)?"1":"0").Append("\t").Append(h==fg?"1":"0").Append("\n");
+      RECT r; GetWindowRect(h, out r);
+      outp.Append(title).Append("\t").Append(IsIconic(h)?"1":"0").Append("\t").Append(h==fg?"1":"0")
+          .Append("\t").Append(r.L).Append("\t").Append(r.T).Append("\t").Append(r.R).Append("\t").Append(r.B).Append("\n");
       return true;
     }, IntPtr.Zero);
     return outp.ToString();
@@ -44,18 +51,34 @@ function enumWindows() {
     execFile(
       'powershell',
       ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', PS],
-      { windowsHide: true, timeout: 12000, maxBuffer: 1 << 20 },
+      { windowsHide: true, timeout: 20000, maxBuffer: 1 << 20 },
       (err, stdout) => {
-        if (err) return resolve(null) // no se pudo enumerar
+        if (err) return resolve(null)
         const rows = String(stdout)
           .split('\n')
           .map((l) => l.split('\t'))
           .filter((p) => p[0] && p[0].trim())
-          .map((p) => ({ title: p[0], min: p[1] === '1', fg: p[2] === '1' }))
+          .map((p) => ({
+            title: p[0],
+            min: p[1] === '1',
+            fg: p[2] === '1',
+            rect: { left: +p[3] || 0, top: +p[4] || 0, right: +p[5] || 0, bottom: +p[6] || 0 }
+          }))
         resolve(rows)
       }
     )
   })
+}
+
+// Cache compartida (feature 6 + zonas de exclusión)
+let _cache = []
+async function refresh() {
+  const w = await enumWindows()
+  if (w) _cache = w
+  return _cache
+}
+function getCache() {
+  return _cache
 }
 
 class WindowsWatcher {
@@ -64,12 +87,12 @@ class WindowsWatcher {
     this.lastAlert = {}
   }
 
-  // cfg + fire(mensaje). No hace nada si no hay títulos configurados.
-  async check(cfg, fire) {
+  // Usa la cache (no enumera). cfg + fire(mensaje). No hace nada sin títulos.
+  check(cfg, fire) {
     const titulos = Array.isArray(cfg.ventanas_titulos) ? cfg.ventanas_titulos.filter(Boolean) : []
     if (!titulos.length) return
-    const wins = await enumWindows()
-    if (!wins) return // sin acceso → no molestamos
+    const wins = _cache
+    if (!wins || !wins.length) return
     const now = Date.now()
     const umbralMs = (Number(cfg.ventanas_umbral_seg) || 15) * 1000
     const cooldownMs = (Number(cfg.ventanas_cooldown_seg) || 30) * 1000
@@ -98,4 +121,4 @@ class WindowsWatcher {
   }
 }
 
-module.exports = { WindowsWatcher, enumWindows }
+module.exports = { WindowsWatcher, enumWindows, refresh, getCache }

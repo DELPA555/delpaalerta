@@ -15,7 +15,8 @@ const { AlertEngine } = require('./tracker')
 const sounds = require('./sounds')
 const player = require('./player')
 const { BannerDetector } = require('./detectBanner')
-const { WindowsWatcher } = require('./windowsWatch')
+const windowsWatch = require('./windowsWatch')
+const { WindowsWatcher } = windowsWatch
 const { getVolume } = require('./volume')
 const visualAlert = require('./visualAlert')
 const licVerify = require('./license/verify')
@@ -72,6 +73,57 @@ function dispararAlerta(mensaje, reps) {
     .catch(() => {})
 }
 
+// ── Zonas de exclusión ────────────────────────────────────────────────────────
+// ¿Hace falta enumerar ventanas? (feature 6 o zonas de exclusión relativas)
+function needWindows() {
+  const feat6 = Array.isArray(cfg.ventanas_titulos) && cfg.ventanas_titulos.length > 0
+  const exWin =
+    cfg.exclusion_habilitado &&
+    Array.isArray(cfg.exclusion_zonas_ventana) &&
+    cfg.exclusion_zonas_ventana.length > 0
+  return feat6 || exWin
+}
+
+// Calcula las zonas de exclusión en coordenadas del FRAME capturado.
+function computeExclusions() {
+  if (!cfg.exclusion_habilitado) return []
+  const out = []
+  // Absolutas (px del frame)
+  for (const z of cfg.exclusion_zonas_absolutas || []) {
+    out.push({ x0: z.left | 0, y0: z.top | 0, x1: (z.left | 0) + (z.width | 0), y1: (z.top | 0) + (z.height | 0) })
+  }
+  // Relativas a cada ventana (siguen a las ventanas si se mueven/redimensionan)
+  const zonas = cfg.exclusion_zonas_ventana || []
+  if (zonas.length) {
+    const titulos =
+      cfg.exclusion_titulos && cfg.exclusion_titulos.length
+        ? cfg.exclusion_titulos
+        : cfg.ventanas_titulos || []
+    if (titulos.length) {
+      const { offX, offY } = capture.captureOrigin(cfg.monitor)
+      for (const w of windowsWatch.getCache()) {
+        if (w.min || !w.rect) continue
+        const t = w.title.toLowerCase()
+        if (!titulos.some((x) => t.includes(String(x).toLowerCase()))) continue
+        const rw = w.rect.right - w.rect.left
+        const rh = w.rect.bottom - w.rect.top
+        if (rw <= 0 || rh <= 0) continue
+        for (const z of zonas) {
+          const zx0 = w.rect.left + z.left * rw
+          const zy0 = w.rect.top + z.top * rh
+          out.push({
+            x0: Math.round(zx0 - offX),
+            y0: Math.round(zy0 - offY),
+            x1: Math.round(zx0 + z.width * rw - offX),
+            y1: Math.round(zy0 + z.height * rh - offY)
+          })
+        }
+      }
+    }
+  }
+  return out
+}
+
 // ── Loop de detección ─────────────────────────────────────────────────────────
 async function tick() {
   if (cfg.pausado || corriendo) return
@@ -79,7 +131,7 @@ async function tick() {
   try {
     const frame = await capture.grab(cfg.monitor)
     if (frame) {
-      const blobs = detect(frame, cfg)
+      const blobs = detect(frame, cfg, computeExclusions())
       const idle = powerMonitor.getSystemIdleTime()
       const fires = engine.update(blobs, Date.now(), idle, cfg)
       if (fires.length) {
@@ -104,12 +156,21 @@ function startLoop() {
   if (loopTimer) clearInterval(loopTimer)
   const ms = Math.max(200, Number(cfg.intervalo_scan_seg) * 1000 || 1000)
   loopTimer = setInterval(tick, ms)
-  // (6) Monitoreo de ventanas esperadas (timer aparte, más lento)
+  // (6) Ventanas esperadas + refresco de bounds para zonas de exclusión.
+  // Enumera (PowerShell) en un timer lento y cachea; el loop de 1 s usa la cache.
   if (windowsTimer) clearInterval(windowsTimer)
   const wms = Math.max(3000, (Number(cfg.ventanas_intervalo_seg) || 10) * 1000)
-  windowsTimer = setInterval(() => {
-    winWatcher.check(cfg, (msg) => dispararAlerta(msg, 1)).catch(() => {})
-  }, wms)
+  const refrescarVentanas = async () => {
+    if (!needWindows()) return
+    try {
+      await windowsWatch.refresh()
+      winWatcher.check(cfg, (msg) => dispararAlerta(msg, 1))
+    } catch (_) {
+      /* noop */
+    }
+  }
+  windowsTimer = setInterval(refrescarVentanas, wms)
+  refrescarVentanas() // primer refresco inmediato (para tener bounds ya en el 1er tick)
   log(`Vigilancia iniciada. intervalo=${ms}ms monitor=${cfg.monitor} sonido=${cfg.sonido} pausado=${cfg.pausado}`)
 }
 

@@ -55,4 +55,13 @@ async function grabImage(monitorIdx) {
   return { image: img, width: size.width, height: size.height }
 }
 
-module.exports = { grab, grabImage }
+// Origen (en píxeles físicos) del display capturado + su factor de escala.
+// Sirve para pasar coordenadas de pantalla (GetWindowRect) a coordenadas del
+// frame capturado: frameX = screenX - offX.
+function captureOrigin(monitorIdx) {
+  const d = pickDisplay(monitorIdx)
+  const s = d.scaleFactor || 1
+  return { offX: Math.round(d.bounds.x * s), offY: Math.round(d.bounds.y * s), scale: s }
+}
+
+module.exports = { grab, grabImage, captureOrigin }
