@@ -110,6 +110,13 @@ al actualizar sin configurar nada por PC. Se ajusta desde la ventana **Opciones*
 - `exclusion_zonas_absolutas`: opcional, zonas fijas en píxeles del frame.
 - Los píxeles verdes dentro de estas zonas **no se analizan** → no generan alerta.
 
+**Escritorio remoto (Google Remote Desktop, etc.):** si mirás todo dentro de una
+sola ventana remota, las ventanas de WhatsApp **no son ventanas separadas** para
+el sistema local, así que la exclusión por programa/título no las aísla. Para ese
+caso usá el **editor visual**: Opciones → "🖊 Marcar zonas en pantalla" → dibujás
+un recuadro sobre cada barra verde. Se guardan como **posiciones fijas**
+(`exclusion_zonas_absolutas`) y sirven mientras el acomodo no cambie.
+
 ## Licencias (producto)
 
 Delpa Alertas se activa con un **código de licencia firmado (ed25519)**. La app

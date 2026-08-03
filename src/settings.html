@@ -204,6 +204,15 @@
         <label style="margin-top:10px">…o por título de ventana (coma; opcional)</label>
         <input id="exclusion_titulos" placeholder="cargas 1, cargas 2, Retiros" />
         <div class="hint">Excluye la franja inferior (donde WhatsApp muestra Chats/Llamadas con puntos verdes fijos) de cada ventana espejada, detectada por su programa o su título.</div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:14px 0" />
+        <label>Zonas marcadas a mano (para escritorio remoto)</label>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
+          <button id="btnZonas" type="button">🖊 Marcar zonas en pantalla</button>
+          <button id="btnZonasClear" type="button">Borrar</button>
+          <span class="hint" id="zonasCount">0 zonas</span>
+        </div>
+        <div class="hint">Si mirás todo por escritorio remoto (Google Remote Desktop), dibujá un recuadro sobre cada barra verde a ignorar. Se guardan como posiciones fijas.</div>
       </div>
 
       <div class="btns" style="margin-top:4px">
@@ -269,6 +278,7 @@
         $('exclusion_titulos').value = (cfg.exclusion_titulos || []).join(', ')
         const zh = (cfg.exclusion_zonas_ventana && cfg.exclusion_zonas_ventana[0] && cfg.exclusion_zonas_ventana[0].height) || 0.1
         $('exclusion_franja_pct').value = Math.round(zh * 100)
+        $('zonasCount').textContent = ((cfg.exclusion_zonas_absolutas || []).length) + ' zonas'
         setEstado(cfg.pausado)
         paintSwatches()
       }
@@ -320,6 +330,16 @@
         if (ok) setTimeout(() => { s.textContent = '' }, 2500)
       }
 
+      $('btnZonas').onclick = async () => {
+        const r = await ipcRenderer.invoke('ui:editZones')
+        await load()
+        if (r && r.ok) say(`${r.count} zona(s) marcada(s) ✓`, true)
+      }
+      $('btnZonasClear').onclick = async () => {
+        await ipcRenderer.invoke('ui:clearZones')
+        await load()
+        say('Zonas borradas', true)
+      }
       $('btnTest').onclick = () => ipcRenderer.invoke('ui:testSound', $('sonido').value)
       $('btnPause').onclick = async () => {
         const p = await ipcRenderer.invoke('ui:setPaused', !CFG.pausado)

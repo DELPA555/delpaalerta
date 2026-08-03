@@ -335,6 +335,47 @@ function runCalibrate() {
   })
 }
 
+// Editor visual de zonas de exclusión ABSOLUTAS: captura la pantalla y deja
+// marcar rectángulos (para el caso de escritorio remoto, donde las ventanas de
+// WhatsApp son una sola imagen y no se pueden aislar por programa/título).
+function runZoneEditor() {
+  return new Promise(async (resolve) => {
+    let dataURL, w, h
+    try {
+      const shot = await capture.grabImage(cfg.monitor)
+      if (!shot) return resolve(null)
+      dataURL = shot.image.toDataURL()
+      w = shot.width
+      h = shot.height
+    } catch (e) {
+      log('Error abriendo editor de zonas: ' + (e && e.message))
+      return resolve(null)
+    }
+    const win = new BrowserWindow({
+      fullscreen: true,
+      frame: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      backgroundColor: '#000000',
+      webPreferences: { nodeIntegration: true, contextIsolation: false }
+    })
+    let done = false
+    const finish = (zones) => {
+      if (done) return
+      done = true
+      ipcMain.removeAllListeners('zones:save')
+      ipcMain.removeAllListeners('zones:cancel')
+      if (!win.isDestroyed()) win.close()
+      resolve(zones)
+    }
+    ipcMain.once('zones:save', (_e, zones) => finish(zones))
+    ipcMain.once('zones:cancel', () => finish(null))
+    win.loadFile(path.join(__dirname, 'excludeZones.html'))
+    win.webContents.once('did-finish-load', () => win.webContents.send('zones:image', { dataURL, w, h }))
+    win.on('closed', () => finish(null))
+  })
+}
+
 // ── IPC de la UI ────────────────────────────────────────────────────────────
 function registerIpc() {
   ipcMain.handle('ui:getState', () => ({
@@ -368,6 +409,21 @@ function registerIpc() {
   })
   ipcMain.handle('ui:calibrate', () => runCalibrate())
   ipcMain.handle('ui:checkUpdates', () => checkUpdates(true))
+  // Zonas de exclusión absolutas (editor visual)
+  ipcMain.handle('ui:editZones', async () => {
+    const zones = await runZoneEditor()
+    if (!zones) return { ok: false, count: (cfg.exclusion_zonas_absolutas || []).length }
+    store.set('exclusion_zonas_absolutas', zones)
+    if (!cfg.exclusion_habilitado) store.set('exclusion_habilitado', true)
+    applyRuntime()
+    log('[exclusión] ' + zones.length + ' zona(s) absoluta(s) marcada(s)')
+    return { ok: true, count: zones.length }
+  })
+  ipcMain.handle('ui:clearZones', () => {
+    store.set('exclusion_zonas_absolutas', [])
+    applyRuntime()
+    return { ok: true, count: 0 }
+  })
   // Licencia
   ipcMain.handle('license:status', () => ({ ...checkLicense(), machineShort: machineShort() }))
   ipcMain.handle('license:activate', (_e, code) => {

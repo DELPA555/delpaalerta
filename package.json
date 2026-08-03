@@ -1,6 +1,6 @@
 {
   "name": "delpa-alertas",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Delpa Alertas — avisa con un sonido cuando aparece un mensaje nuevo en la pantalla (círculo verde / banner)",
   "author": "DELPA",
   "main": "src/main.js",

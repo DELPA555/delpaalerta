@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Marcar zonas a excluir</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #000; user-select: none; }
+      #shot { position: absolute; inset: 0; width: 100vw; height: 100vh; object-fit: fill; -webkit-user-drag: none; }
+      #layer { position: absolute; inset: 0; cursor: crosshair; }
+      .zona {
+        position: absolute; border: 2px solid #ff5a5a; background: rgba(255,90,90,.22);
+        box-shadow: 0 0 0 9999px rgba(0,0,0,0); pointer-events: none;
+      }
+      #bar {
+        position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+        display: flex; gap: 8px; align-items: center; z-index: 10;
+        background: rgba(10,14,20,.92); border: 1px solid #24303d; border-radius: 12px;
+        padding: 8px 12px; font-family: "Segoe UI", sans-serif; color: #e7eef5;
+      }
+      #bar b { color: #79e4aa; }
+      #bar .hint { color: #9fb0c0; font-size: 12px; margin-right: 6px; }
+      button {
+        background: #1a2430; color: #e7eef5; border: 1px solid #24303d; border-radius: 8px;
+        padding: 7px 12px; font-size: 13px; cursor: pointer;
+      }
+      button:hover { border-color: #79e4aa; }
+      button.primary { background: #79e4aa; color: #04110c; border-color: #79e4aa; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <img id="shot" />
+    <div id="layer"></div>
+    <div id="bar">
+      <span class="hint">Arrastrá un recuadro sobre cada barra verde a ignorar</span>
+      <span>Zonas: <b id="count">0</b></span>
+      <button id="undo">Deshacer</button>
+      <button id="clear">Limpiar</button>
+      <button id="cancel">Cancelar (Esc)</button>
+      <button id="save" class="primary">Guardar</button>
+    </div>
+    <script>
+      const { ipcRenderer } = require('electron')
+      const shot = document.getElementById('shot')
+      const layer = document.getElementById('layer')
+      const countEl = document.getElementById('count')
+      let W = 0, H = 0
+      const zonas = [] // en px de pantalla (viewport), luego se convierten a px del frame
+
+      ipcRenderer.on('zones:image', (_e, { dataURL, w, h }) => { W = w; H = h; shot.src = dataURL })
+
+      let drawing = null, previewEl = null
+      layer.addEventListener('mousedown', (e) => {
+        drawing = { x: e.clientX, y: e.clientY }
+        previewEl = document.createElement('div')
+        previewEl.className = 'zona'
+        layer.appendChild(previewEl)
+      })
+      window.addEventListener('mousemove', (e) => {
+        if (!drawing || !previewEl) return
+        const x = Math.min(drawing.x, e.clientX), y = Math.min(drawing.y, e.clientY)
+        const w = Math.abs(e.clientX - drawing.x), h = Math.abs(e.clientY - drawing.y)
+        Object.assign(previewEl.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' })
+      })
+      window.addEventListener('mouseup', (e) => {
+        if (!drawing || !previewEl) return
+        const x = Math.min(drawing.x, e.clientX), y = Math.min(drawing.y, e.clientY)
+        const w = Math.abs(e.clientX - drawing.x), h = Math.abs(e.clientY - drawing.y)
+        if (w >= 8 && h >= 8) {
+          zonas.push({ x, y, w, h })
+          countEl.textContent = zonas.length
+        } else {
+          previewEl.remove()
+        }
+        drawing = null
+        previewEl = null
+      })
+
+      document.getElementById('undo').onclick = () => {
+        zonas.pop()
+        const divs = layer.querySelectorAll('.zona')
+        if (divs.length) divs[divs.length - 1].remove()
+        countEl.textContent = zonas.length
+      }
+      document.getElementById('clear').onclick = () => {
+        zonas.length = 0
+        layer.querySelectorAll('.zona').forEach((d) => d.remove())
+        countEl.textContent = '0'
+      }
+      document.getElementById('cancel').onclick = () => ipcRenderer.send('zones:cancel')
+      window.addEventListener('keydown', (e) => { if (e.key === 'Escape') ipcRenderer.send('zones:cancel') })
+      document.getElementById('save').onclick = () => {
+        const rx = W / window.innerWidth, ry = H / window.innerHeight
+        const out = zonas.map((z) => ({
+          left: Math.round(z.x * rx), top: Math.round(z.y * ry),
+          width: Math.round(z.w * rx), height: Math.round(z.h * ry)
+        }))
+        ipcRenderer.send('zones:save', out)
+      }
+    </script>
+  </body>
+</html>
