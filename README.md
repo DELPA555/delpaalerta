@@ -110,6 +110,15 @@ al actualizar sin configurar nada por PC. Se ajusta desde la ventana **Opciones*
 - `exclusion_zonas_absolutas`: opcional, zonas fijas en píxeles del frame.
 - Los píxeles verdes dentro de estas zonas **no se analizan** → no generan alerta.
 
+**Falsos positivos por compresión de video (escritorio remoto):** un punto verde
+fijo puede "parpadear" cuadro a cuadro por artefactos de compresión y, si
+desaparece un frame y reaparece, tomarse como mensaje nuevo. Dos ajustes lo
+evitan: `persistencia_seg` (default 2.5) mantiene el mismo punto "vivo" unos
+segundos aunque falle un frame (no re-alerta), y `tolerancia_posicion_px`
+(default 16) absorbe el jitter de 1-3 px. Para diagnosticar, `"diagnostico": true`
+(o el checkbox en Opciones) loguea cada blob nuevo con `x,y,área,aspecto` y si cae
+en una zona de exclusión, en `alerta.log`.
+
 **Escritorio remoto (Google Remote Desktop, etc.):** si mirás todo dentro de una
 sola ventana remota, las ventanas de WhatsApp **no son ventanas separadas** para
 el sistema local, así que la exclusión por programa/título no las aísla. Para ese

@@ -17,7 +17,14 @@ const DEFAULTS = {
   area_max: 560,
   redondez_min: 0.75,
   intervalo_scan_seg: 1.0,
-  tolerancia_posicion_px: 12,
+  // Dos blobs se consideran "el mismo" entre frames si están a esta distancia.
+  // 16px cubre el jitter de compresión de video del escritorio remoto.
+  tolerancia_posicion_px: 16,
+  // Un tracker sobrevive sin detección estos segundos (el parpadeo por compresión
+  // no lo resetea → no re-dispara la alerta base sobre un punto fijo).
+  persistencia_seg: 2.5,
+  // Modo diagnóstico: loguea cada blob NUEVO (x,y,área,aspecto,en zona de exclusión).
+  diagnostico: false,
 
   // Sonido: clave del catálogo (bundled 'clasico'/'doble'/'campana' o 'win:archivo.wav')
   sonido: 'clasico',

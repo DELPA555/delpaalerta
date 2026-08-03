@@ -54,30 +54,36 @@ class AlertEngine {
     this.trackers = [] // { x, y, firstSeen, fired }
   }
 
-  // blobs: [{x,y}] · now: ms · idleSeconds · cfg
-  // Devuelve las tandas a disparar en este tick: [{ reps }]
+  // blobs: [{x,y,area,aspect}] · now: ms · idleSeconds · cfg
+  // Devuelve { fires: [{reps}], nuevos: [blob,…] } (nuevos = blobs que crearon un
+  // tracker nuevo, para el modo diagnóstico).
   update(blobs, now, idleSeconds, cfg) {
-    const tol = Number(cfg.tolerancia_posicion_px) || 12
+    const tol = Number(cfg.tolerancia_posicion_px) || 16
     const tol2 = tol * tol
     const rules = normalizeRules(cfg.escalada)
     const umbralIdle = cfg.segundos_inactividad_para_escalar != null
       ? Number(cfg.segundos_inactividad_para_escalar)
       : 20
     const idleOk = idleSeconds >= umbralIdle
+    // Persistencia: un tracker sobrevive sin detección estos segundos (evita que
+    // el parpadeo por compresión de video lo resetee y re-dispare la alerta base).
+    const graceMs = Math.max(0, (cfg.persistencia_seg != null ? Number(cfg.persistencia_seg) : 2.5) * 1000)
 
-    const usados = new Set()
+    const trackers = this.trackers
+    const usados = new Array(trackers.length).fill(false)
     const fires = []
+    const nuevos = []
     const next = []
 
     for (let bi = 0; bi < blobs.length; bi++) {
       // Machea el blob con el tracker más cercano no usado dentro de tolerancia
+      // (incluye trackers "en gracia" que no se vieron el último frame).
       let best = -1
       let bestd = tol2 + 1
-      for (let ti = 0; ti < this.trackers.length; ti++) {
-        if (usados.has(ti)) continue
-        const t = this.trackers[ti]
-        const dx = blobs[bi].x - t.x
-        const dy = blobs[bi].y - t.y
+      for (let ti = 0; ti < trackers.length; ti++) {
+        if (usados[ti]) continue
+        const dx = blobs[bi].x - trackers[ti].x
+        const dy = blobs[bi].y - trackers[ti].y
         const d = dx * dx + dy * dy
         if (d <= tol2 && d < bestd) {
           bestd = d
@@ -87,12 +93,14 @@ class AlertEngine {
 
       let t
       if (best >= 0) {
-        usados.add(best)
-        t = this.trackers[best]
+        usados[best] = true
+        t = trackers[best]
         t.x = blobs[bi].x
         t.y = blobs[bi].y
+        t.lastSeen = now
       } else {
-        t = { x: blobs[bi].x, y: blobs[bi].y, firstSeen: now, fired: 0 }
+        t = { x: blobs[bi].x, y: blobs[bi].y, firstSeen: now, lastSeen: now, fired: 0 }
+        nuevos.push(blobs[bi])
       }
 
       const elapsed = (now - t.firstSeen) / 1000
@@ -105,9 +113,15 @@ class AlertEngine {
       next.push(t)
     }
 
-    // Los trackers no macheados desaparecieron → se descartan (reset del contador)
+    // Trackers no macheados este frame: se mantienen "en gracia" mientras no pase
+    // graceMs desde la última vez que se vieron; recién ahí se descartan (reset).
+    for (let ti = 0; ti < trackers.length; ti++) {
+      if (usados[ti]) continue
+      if (now - trackers[ti].lastSeen <= graceMs) next.push(trackers[ti])
+    }
+
     this.trackers = next
-    return fires
+    return { fires, nuevos }
   }
 
   get activos() {

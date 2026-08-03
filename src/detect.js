@@ -114,7 +114,7 @@ function detect(frame, cfg, exclusions) {
     const aspecto = Math.min(w, h) / Math.max(w, h)
     if (aspecto < redondezMin) continue
 
-    blobs.push({ x: x0 + sumx / count, y: y0 + sumy / count })
+    blobs.push({ x: x0 + sumx / count, y: y0 + sumy / count, area: count, aspect: aspecto })
   }
 
   return blobs

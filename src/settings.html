@@ -144,6 +144,10 @@
             <label>Tolerancia de posición (px)</label>
             <input id="tolerancia_posicion_px" type="number" min="1" />
           </div>
+          <div>
+            <label>Persistencia del blob (seg)</label>
+            <input id="persistencia_seg" type="number" min="0" step="0.5" />
+          </div>
         </div>
         <div class="hint">La región a vigilar (pantalla completa o un recuadro) se edita en config.json.</div>
       </div>
@@ -170,7 +174,8 @@
 
       <div class="card">
         <h2>Detección avanzada</h2>
-        <label class="chk"><input type="checkbox" id="banner_habilitado" /> Detectar banner emergente (franja superior, por cambio de píxeles)</label>
+        <label class="chk"><input type="checkbox" id="diagnostico" /> Modo diagnóstico (loguea cada blob nuevo en alerta.log)</label>
+        <label class="chk" style="margin-top:8px"><input type="checkbox" id="banner_habilitado" /> Detectar banner emergente (franja superior, por cambio de píxeles)</label>
         <label style="margin-top:10px">Ventanas a vigilar (separadas por coma; vacío = no vigilar)</label>
         <input id="ventanas_titulos" placeholder="cargas 1, cargas 2, cargas 3, cargas 4, Retiros" />
         <div class="grid2" style="margin-top:10px">
@@ -261,9 +266,10 @@
         $('min0').value = cfg.color_rgb_min[0]; $('min1').value = cfg.color_rgb_min[1]; $('min2').value = cfg.color_rgb_min[2]
         $('max0').value = cfg.color_rgb_max[0]; $('max1').value = cfg.color_rgb_max[1]; $('max2').value = cfg.color_rgb_max[2]
         // números
-        for (const k of ['monitor','intervalo_scan_seg','area_min','area_max','redondez_min','tolerancia_posicion_px','espaciado_repeticiones_ms','segundos_inactividad_para_escalar']) {
+        for (const k of ['monitor','intervalo_scan_seg','area_min','area_max','redondez_min','tolerancia_posicion_px','persistencia_seg','espaciado_repeticiones_ms','segundos_inactividad_para_escalar']) {
           $(k).value = cfg[k]
         }
+        $('diagnostico').checked = !!cfg.diagnostico
         $('escalada').value = JSON.stringify(cfg.escalada, null, 2)
         // detección avanzada
         $('banner_habilitado').checked = !!cfg.banner_habilitado
@@ -299,6 +305,8 @@
           area_max: parseInt($('area_max').value, 10) || 1,
           redondez_min: parseFloat($('redondez_min').value) || 0,
           tolerancia_posicion_px: parseInt($('tolerancia_posicion_px').value, 10) || 1,
+          persistencia_seg: parseFloat($('persistencia_seg').value) || 0,
+          diagnostico: $('diagnostico').checked,
           espaciado_repeticiones_ms: parseInt($('espaciado_repeticiones_ms').value, 10) || 0,
           segundos_inactividad_para_escalar: parseInt($('segundos_inactividad_para_escalar').value, 10) || 0,
           banner_habilitado: $('banner_habilitado').checked,

@@ -139,9 +139,21 @@ async function tick() {
   try {
     const frame = await capture.grab(cfg.monitor)
     if (frame) {
-      const blobs = detect(frame, cfg, computeExclusions())
+      const exclusions = computeExclusions()
+      const blobs = detect(frame, cfg, exclusions)
       const idle = powerMonitor.getSystemIdleTime()
-      const fires = engine.update(blobs, Date.now(), idle, cfg)
+      const { fires, nuevos } = engine.update(blobs, Date.now(), idle, cfg)
+      // Modo diagnóstico: loguea cada blob nuevo (coords, área, aspecto, zona)
+      if (cfg.diagnostico && nuevos.length) {
+        for (const b of nuevos) {
+          const dentro = exclusions.some((r) => b.x >= r.x0 && b.x < r.x1 && b.y >= r.y0 && b.y < r.y1)
+          log(
+            `[diag] blob nuevo x=${Math.round(b.x)} y=${Math.round(b.y)} area=${b.area} ` +
+            `aspecto=${(b.aspect || 0).toFixed(2)} enZonaExclusion=${dentro} ` +
+            `(${exclusions.length} zona/s activas, círculos=${engine.activos})`
+          )
+        }
+      }
       if (fires.length) {
         const total = fires.reduce((a, f) => a + f.reps, 0)
         for (const f of fires) dispararAlerta('Mensaje nuevo (círculo verde)', f.reps)
