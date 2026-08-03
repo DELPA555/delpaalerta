@@ -3,3 +3,7 @@ dist-installer/
 *.log
 npm-debug.log*
 .DS_Store
+
+# Licencias — la clave privada y el registro de clientes NUNCA se publican
+licencias/keys/
+licencias/registro.json

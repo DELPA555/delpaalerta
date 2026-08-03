@@ -1,7 +1,7 @@
 {
-  "name": "alertapantalla",
-  "version": "1.1.0",
-  "description": "AlertaPantalla — avisa con un sonido cuando aparece un círculo verde de mensaje nuevo en la pantalla",
+  "name": "delpa-alertas",
+  "version": "1.2.0",
+  "description": "Delpa Alertas — avisa con un sonido cuando aparece un mensaje nuevo en la pantalla (círculo verde / banner)",
   "author": "DELPA",
   "main": "src/main.js",
   "scripts": {
@@ -20,7 +20,7 @@
   },
   "build": {
     "appId": "com.delpa.alertapantalla",
-    "productName": "AlertaPantalla",
+    "productName": "Delpa Alertas",
     "directories": {
       "output": "dist-installer",
       "buildResources": "build"
@@ -53,7 +53,7 @@
           ]
         }
       ],
-      "artifactName": "AlertaPantalla-Setup-${version}.${ext}",
+      "artifactName": "Delpa-Alertas-Setup-${version}.${ext}",
       "icon": "build/icon.ico"
     },
     "nsis": {
@@ -62,7 +62,7 @@
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
-      "shortcutName": "AlertaPantalla"
+      "shortcutName": "Delpa Alertas"
     }
   }
 }

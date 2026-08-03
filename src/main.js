@@ -3,7 +3,7 @@
 // círculo verde de mensaje nuevo. Corre en segundo plano (icono en la bandeja),
 // sin ventana visible, con auto-update por GitHub Releases.
 const path = require('path')
-const { app, Tray, Menu, nativeImage, powerMonitor, shell, ipcMain, BrowserWindow } = require('electron')
+const { app, Tray, Menu, nativeImage, powerMonitor, shell, ipcMain, BrowserWindow, Notification } = require('electron')
 const electronUpdater = require('electron-updater')
 const { autoUpdater } = electronUpdater
 
@@ -14,6 +14,9 @@ const { detect } = require('./detect')
 const { AlertEngine } = require('./tracker')
 const sounds = require('./sounds')
 const player = require('./player')
+const licVerify = require('./license/verify')
+const { machineId, machineShort } = require('./license/machineId')
+const licStore = require('./license/store')
 
 let tray = null
 let store = null
@@ -23,6 +26,9 @@ let loopTimer = null
 let corriendo = false
 let nextSlot = 0 // agenda global de reproducción (espaciado entre beeps)
 let settingsWin = null
+let activationWin = null
+let licenseState = null
+let avisoMostrado = false
 
 // ── Instancia única ───────────────────────────────────────────────────────────
 if (!app.requestSingleInstanceLock()) {
@@ -96,9 +102,10 @@ function buildMenu() {
   }))
 
   return Menu.buildFromTemplate([
-    { label: `AlertaPantalla v${app.getVersion()}`, enabled: false },
+    { label: `Delpa Alertas v${app.getVersion()}`, enabled: false },
     { type: 'separator' },
     { label: '⚙ Opciones…', click: () => openSettings() },
+    { label: '🔑 Licencia…', click: () => openActivation() },
     {
       label: cfg.pausado ? '▶ Reanudar vigilancia' : '⏸ Pausar vigilancia',
       click: () => {
@@ -140,7 +147,7 @@ function refreshTray() {
 
 function createTray() {
   tray = new Tray(trayIcon())
-  tray.setToolTip('AlertaPantalla — vigilando')
+  tray.setToolTip('Delpa Alertas')
   refreshTray()
   tray.on('double-click', () => player.play(sounds.resolve(cfg.sonido)))
 }
@@ -248,12 +255,90 @@ function registerIpc() {
   })
   ipcMain.handle('ui:calibrate', () => runCalibrate())
   ipcMain.handle('ui:checkUpdates', () => checkUpdates(true))
+  // Licencia
+  ipcMain.handle('license:status', () => ({ ...checkLicense(), machineShort: machineShort() }))
+  ipcMain.handle('license:activate', (_e, code) => {
+    const ev = licVerify.evaluar(code)
+    if (!ev.ok) return { ok: false, mensaje: ev.mensaje }
+    if (ev.estado === 'vencida') return { ok: false, mensaje: 'Ese código está vencido. Pedí uno nuevo para renovar.' }
+    licStore.save(code, machineId())
+    avisoMostrado = false
+    applyLicense()
+    return { ok: true, ...ev, machineShort: machineShort() }
+  })
   ipcMain.on('ui:openConfigFile', () => shell.openPath(configPath()))
   ipcMain.on('ui:openLog', () => shell.openPath(logPath()))
   ipcMain.on('ui:quit', () => {
     app.isQuitting = true
     app.quit()
   })
+}
+
+// ── Licencia ──────────────────────────────────────────────────────────────────
+function openActivation() {
+  if (activationWin && !activationWin.isDestroyed()) {
+    activationWin.show()
+    activationWin.focus()
+    return
+  }
+  activationWin = new BrowserWindow({
+    width: 480,
+    height: 580,
+    title: 'Delpa Alertas — Licencia',
+    icon: path.join(__dirname, '..', 'assets', 'tray.png'),
+    autoHideMenuBar: true,
+    resizable: false,
+    backgroundColor: '#0b0f14',
+    webPreferences: { nodeIntegration: true, contextIsolation: false }
+  })
+  activationWin.loadFile(path.join(__dirname, 'activation.html'))
+  activationWin.on('closed', () => {
+    activationWin = null
+  })
+}
+
+// Evalúa la licencia guardada (firma + vigencia + atadura a esta PC).
+function checkLicense() {
+  const st = licStore.get()
+  if (!st.code) {
+    return { ok: false, funciona: false, estado: 'sin_activar', mensaje: 'Activá tu licencia para empezar.' }
+  }
+  const ev = licVerify.evaluar(st.code)
+  if (ev.ok && st.machineId && st.machineId !== machineId()) {
+    return {
+      ok: false, funciona: false, estado: 'otra_pc', cliente: ev.cliente,
+      mensaje: 'Esta licencia fue activada en otra PC. Usá el código en la PC original o pedí uno nuevo.'
+    }
+  }
+  return ev
+}
+
+// Aplica el estado de licencia: arranca o detiene la vigilancia y avisa.
+function applyLicense() {
+  licenseState = checkLicense()
+  if (licenseState.funciona) {
+    if (!loopTimer) startLoop()
+    if (licenseState.avisar && !avisoMostrado) {
+      avisoMostrado = true
+      try {
+        new Notification({ title: 'Delpa Alertas — Licencia', body: licenseState.mensaje }).show()
+      } catch (_) {
+        /* noop */
+      }
+    }
+    log('[licencia] ' + (licenseState.mensaje || licenseState.estado))
+  } else {
+    if (loopTimer) {
+      clearInterval(loopTimer)
+      loopTimer = null
+    }
+    log('[licencia] ' + licenseState.mensaje + ' → vigilancia detenida')
+    openActivation()
+  }
+  refreshTray()
+  if (tray) {
+    tray.setToolTip('Delpa Alertas — ' + (licenseState.funciona ? 'vigilando' : 'sin licencia activa'))
+  }
 }
 
 // ── Auto-update (GitHub Releases, igual patrón que LG Prop) ──────────────────
@@ -315,7 +400,8 @@ app.whenReady().then(() => {
   registerIpc()
   createTray()
   setupUpdater()
-  startLoop()
+  applyLicense() // arranca la vigilancia sólo si la licencia está vigente
+  setInterval(applyLicense, 6 * 60 * 60 * 1000) // re-chequeo periódico (vencimiento/gracia)
 
-  log('AlertaPantalla listo (v' + app.getVersion() + ')')
+  log('Delpa Alertas listo (v' + app.getVersion() + ')')
 })

@@ -1,9 +1,10 @@
-# AlertaPantalla
+# Delpa Alertas
 
 App de **Windows en segundo plano** que vigila la pantalla y **suena cuando
-aparece un círculo verde de mensaje nuevo** (el de "no leídos" al lado de un
-contacto). Pensada para PCs donde se comparten varias ventanas de WhatsApp por
-escritorio remoto sin audio.
+aparece un mensaje nuevo** (círculo verde de "no leídos" al lado de un contacto,
+y —próximamente— banner emergente). Pensada para PCs donde se comparten varias
+ventanas de WhatsApp por escritorio remoto sin audio. Se distribuye como
+**producto con licencia** (ver más abajo).
 
 Reescrita en **Electron** (antes Python/PyInstaller) para tener
 **auto-actualización** por GitHub Releases, igual que el resto de los proyectos.
@@ -46,7 +47,7 @@ No se usan tonos de marcas por derechos de autor.
 
 ## Configuración
 
-`%APPDATA%\AlertaPantalla\config.json` (se crea solo; editable sin recompilar,
+`%APPDATA%\Delpa Alertas\config.json` (se crea solo; editable sin recompilar,
 los cambios se toman al reiniciar la app). Lo más cómodo es editarlo desde la
 ventana **Opciones** (ícono de la bandeja → ⚙ Opciones…):
 
@@ -65,7 +66,20 @@ ventana **Opciones** (ícono de la bandeja → ⚙ Opciones…):
 | `segundos_inactividad_para_escalar` | Idle mínimo para escalar (default 20) |
 | `pausado` | `true` para no alertar |
 
-**Log:** `%APPDATA%\AlertaPantalla\alerta.log` (inicio, alertas y updates).
+**Log:** `%APPDATA%\Delpa Alertas\alerta.log` (inicio, alertas, updates y licencia).
+
+## Licencias (producto)
+
+Delpa Alertas se activa con un **código de licencia firmado (ed25519)**. La app
+trae solo la clave pública; la privada vive solo en tu máquina
+(`licencias/keys/`, gitignored). Al primer uso pide activar; valida firma +
+vencimiento y ata la licencia a esa PC. Avisa 7 días antes de vencer, da 3 días
+de gracia, y pasada la gracia **detiene la vigilancia** hasta renovar (el cliente
+solo pega un código nuevo). Generar una licencia:
+
+```bash
+node licencias/generar-licencia.js --cliente "Nombre del Negocio" --meses 6
+```
 
 ---
 
@@ -89,5 +103,5 @@ Publica el instalador + `latest.yml` en **GitHub Releases**
 
 ## Instalar en una PC
 
-Descargá `AlertaPantalla-Setup-<version>.exe` del release y ejecutalo. Queda en
+Descargá `Delpa-Alertas-Setup-<version>.exe` del release y ejecutalo. Queda en
 la bandeja y arranca solo al iniciar sesión.
