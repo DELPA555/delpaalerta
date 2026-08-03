@@ -86,25 +86,29 @@ ventana **Opciones** (ícono de la bandeja → ⚙ Opciones…):
 ### Zonas de exclusión (evitar falsos positivos)
 
 La barra inferior de WhatsApp (íconos Chats/Llamadas/Novedades/Herramientas)
-tiene puntos verdes fijos del **mismo color** que el círculo de mensaje nuevo. Para
-que la detección **ignore** esas zonas, en `config.json`:
+tiene puntos verdes fijos del **mismo color** que el círculo de mensaje nuevo.
+**Viene activado por defecto**: excluye la **franja inferior** de cada ventana
+espejada, detectándola **sola por su programa** (`scrcpy`/`whatsapp`) — funciona
+al actualizar sin configurar nada por PC. Se ajusta desde la ventana **Opciones**
+(sección "Detección avanzada") o en `config.json`:
 
 ```json
 "exclusion_habilitado": true,
-"exclusion_titulos": ["cargas 1", "cargas 2", "cargas 3", "cargas 4", "Retiros"],
-"exclusion_zonas_ventana": [ { "top": 0.9, "left": 0, "width": 1, "height": 0.1 } ]
+"exclusion_procesos": ["scrcpy", "whatsapp"],
+"exclusion_zonas_ventana": [ { "top": 0.9, "left": 0, "width": 1, "height": 0.1 } ],
+"exclusion_titulos": ["cargas 1", "Retiros"]
 ```
 
+- `exclusion_procesos`: nombres de programa (sin `.exe`) cuyas ventanas se
+  excluyen automáticamente, sin importar el título. Si espejás con otro programa,
+  agregá su nombre acá.
 - `exclusion_zonas_ventana`: zonas como **fracción del ancho/alto de CADA ventana**
-  (0..1). El ejemplo excluye la **franja inferior (10%)** de cada ventana. Como es
-  relativo a la ventana, **sigue funcionando aunque las ventanas se muevan o
-  cambien de tamaño**.
-- `exclusion_titulos`: a qué ventanas aplicar esas zonas (por título; si se deja
-  vacío usa `ventanas_titulos`).
-- `exclusion_zonas_absolutas`: opcional, zonas fijas en píxeles del frame
-  (`{ "top", "left", "width", "height" }`).
+  (0..1); el default excluye la **franja inferior (10%)**. Como es relativo a la
+  ventana, **sigue funcionando aunque las ventanas se muevan o cambien de tamaño**.
+- `exclusion_titulos`: alternativa por título (si las ventanas no coinciden por
+  programa). Vacío = usa `ventanas_titulos`.
+- `exclusion_zonas_absolutas`: opcional, zonas fijas en píxeles del frame.
 - Los píxeles verdes dentro de estas zonas **no se analizan** → no generan alerta.
-  Ajustá la altura de la franja si cambia el diseño; no hace falta recompilar.
 
 ## Licencias (producto)
 

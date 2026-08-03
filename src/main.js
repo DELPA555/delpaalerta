@@ -80,7 +80,10 @@ function needWindows() {
   const exWin =
     cfg.exclusion_habilitado &&
     Array.isArray(cfg.exclusion_zonas_ventana) &&
-    cfg.exclusion_zonas_ventana.length > 0
+    cfg.exclusion_zonas_ventana.length > 0 &&
+    ((cfg.exclusion_procesos && cfg.exclusion_procesos.length) ||
+      (cfg.exclusion_titulos && cfg.exclusion_titulos.length) ||
+      (cfg.ventanas_titulos && cfg.ventanas_titulos.length))
   return feat6 || exWin
 }
 
@@ -99,12 +102,16 @@ function computeExclusions() {
       cfg.exclusion_titulos && cfg.exclusion_titulos.length
         ? cfg.exclusion_titulos
         : cfg.ventanas_titulos || []
-    if (titulos.length) {
+    const procesos = (cfg.exclusion_procesos || []).map((s) => String(s).toLowerCase())
+    if (titulos.length || procesos.length) {
       const { offX, offY } = capture.captureOrigin(cfg.monitor)
       for (const w of windowsWatch.getCache()) {
         if (w.min || !w.rect) continue
         const t = w.title.toLowerCase()
-        if (!titulos.some((x) => t.includes(String(x).toLowerCase()))) continue
+        const pr = (w.proc || '').toLowerCase()
+        const matchTitulo = titulos.some((x) => t.includes(String(x).toLowerCase()))
+        const matchProceso = procesos.includes(pr)
+        if (!matchTitulo && !matchProceso) continue
         const rw = w.rect.right - w.rect.left
         const rh = w.rect.bottom - w.rect.top
         if (rw <= 0 || rh <= 0) continue

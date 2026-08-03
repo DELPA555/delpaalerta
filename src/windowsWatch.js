@@ -13,6 +13,7 @@ $ErrorActionPreference='Stop'
 Add-Type @"
 using System;
 using System.Text;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 public class WinEnum {
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
@@ -23,6 +24,7 @@ public class WinEnum {
   [DllImport("user32.dll")] static extern int GetWindowTextLength(IntPtr h);
   [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] static extern int GetWindowThreadProcessId(IntPtr h, out int pid);
   [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr c);
   delegate bool EnumProc(IntPtr h, IntPtr l);
   public static string List() {
@@ -35,8 +37,11 @@ public class WinEnum {
       StringBuilder t=new StringBuilder(len+1); GetWindowText(h,t,t.Capacity);
       string title=t.ToString().Replace("\t"," ").Replace("\n"," ");
       RECT r; GetWindowRect(h, out r);
+      int pid; GetWindowThreadProcessId(h, out pid);
+      string proc=""; try { proc=Process.GetProcessById(pid).ProcessName; } catch {}
       outp.Append(title).Append("\t").Append(IsIconic(h)?"1":"0").Append("\t").Append(h==fg?"1":"0")
-          .Append("\t").Append(r.L).Append("\t").Append(r.T).Append("\t").Append(r.R).Append("\t").Append(r.B).Append("\n");
+          .Append("\t").Append(r.L).Append("\t").Append(r.T).Append("\t").Append(r.R).Append("\t").Append(r.B)
+          .Append("\t").Append(proc).Append("\n");
       return true;
     }, IntPtr.Zero);
     return outp.ToString();
@@ -51,7 +56,7 @@ function enumWindows() {
     execFile(
       'powershell',
       ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', PS],
-      { windowsHide: true, timeout: 20000, maxBuffer: 1 << 20 },
+      { windowsHide: true, timeout: 30000, maxBuffer: 1 << 20 },
       (err, stdout) => {
         if (err) return resolve(null)
         const rows = String(stdout)
@@ -62,7 +67,8 @@ function enumWindows() {
             title: p[0],
             min: p[1] === '1',
             fg: p[2] === '1',
-            rect: { left: +p[3] || 0, top: +p[4] || 0, right: +p[5] || 0, bottom: +p[6] || 0 }
+            rect: { left: +p[3] || 0, top: +p[4] || 0, right: +p[5] || 0, bottom: +p[6] || 0 },
+            proc: (p[7] || '').trim()
           }))
         resolve(rows)
       }

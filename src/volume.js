@@ -57,7 +57,7 @@ function getVolume() {
     execFile(
       'powershell',
       ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', PS],
-      { windowsHide: true, timeout: 15000 },
+      { windowsHide: true, timeout: 20000 },
       (err, stdout) => {
         if (err) return resolve({ muted: false, pct: 100, error: true })
         const m = String(stdout).trim().match(/(\d+):([01])/)

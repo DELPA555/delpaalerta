@@ -188,6 +188,22 @@
           <label>Umbral de volumen (%)</label>
           <input id="volumen_umbral_pct" type="number" min="0" max="100" />
         </div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:14px 0" />
+        <label class="chk"><input type="checkbox" id="exclusion_habilitado" /> Ignorar la barra inferior de las ventanas (evita falsos positivos)</label>
+        <div class="grid2" style="margin-top:10px">
+          <div>
+            <label>Programas a excluir (coma)</label>
+            <input id="exclusion_procesos" placeholder="scrcpy, whatsapp" />
+          </div>
+          <div>
+            <label>Franja inferior a excluir (%)</label>
+            <input id="exclusion_franja_pct" type="number" min="1" max="50" />
+          </div>
+        </div>
+        <label style="margin-top:10px">…o por título de ventana (coma; opcional)</label>
+        <input id="exclusion_titulos" placeholder="cargas 1, cargas 2, Retiros" />
+        <div class="hint">Excluye la franja inferior (donde WhatsApp muestra Chats/Llamadas con puntos verdes fijos) de cada ventana espejada, detectada por su programa o su título.</div>
       </div>
 
       <div class="btns" style="margin-top:4px">
@@ -247,6 +263,12 @@
         $('ventanas_umbral_seg').value = cfg.ventanas_umbral_seg
         $('ventanas_intervalo_seg').value = cfg.ventanas_intervalo_seg
         $('volumen_umbral_pct').value = cfg.volumen_umbral_pct
+        // exclusión
+        $('exclusion_habilitado').checked = cfg.exclusion_habilitado !== false
+        $('exclusion_procesos').value = (cfg.exclusion_procesos || []).join(', ')
+        $('exclusion_titulos').value = (cfg.exclusion_titulos || []).join(', ')
+        const zh = (cfg.exclusion_zonas_ventana && cfg.exclusion_zonas_ventana[0] && cfg.exclusion_zonas_ventana[0].height) || 0.1
+        $('exclusion_franja_pct').value = Math.round(zh * 100)
         setEstado(cfg.pausado)
         paintSwatches()
       }
@@ -274,8 +296,13 @@
           ventanas_titulos: $('ventanas_titulos').value.split(',').map((s) => s.trim()).filter(Boolean),
           ventanas_umbral_seg: parseInt($('ventanas_umbral_seg').value, 10) || 15,
           ventanas_intervalo_seg: parseInt($('ventanas_intervalo_seg').value, 10) || 10,
-          volumen_umbral_pct: parseInt($('volumen_umbral_pct').value, 10) || 25
+          volumen_umbral_pct: parseInt($('volumen_umbral_pct').value, 10) || 25,
+          exclusion_habilitado: $('exclusion_habilitado').checked,
+          exclusion_procesos: $('exclusion_procesos').value.split(',').map((s) => s.trim()).filter(Boolean),
+          exclusion_titulos: $('exclusion_titulos').value.split(',').map((s) => s.trim()).filter(Boolean)
         }
+        const franja = Math.max(1, Math.min(50, parseInt($('exclusion_franja_pct').value, 10) || 10)) / 100
+        out.exclusion_zonas_ventana = [{ top: 1 - franja, left: 0, width: 1, height: franja }]
         try {
           const esc = JSON.parse($('escalada').value)
           if (Array.isArray(esc)) out.escalada = esc

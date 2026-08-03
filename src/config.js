@@ -54,11 +54,16 @@ const DEFAULTS = {
   // Zonas de exclusión de la detección de círculo verde (elimina falsos
   // positivos, ej. la barra inferior de WhatsApp con badges verdes fijos).
   // Es un filtro previo: los píxeles verdes dentro de estas zonas se ignoran.
-  exclusion_habilitado: false,
+  // ACTIVADA por defecto: excluye la franja inferior de las ventanas espejadas,
+  // detectándolas SOLAS por su programa (scrcpy/WhatsApp) → funciona al actualizar
+  // sin configurar nada por PC.
+  exclusion_habilitado: true,
   // Zonas relativas a CADA ventana (fracciones 0..1 del ancho/alto de la ventana).
   // Por defecto, la franja inferior (barra Chats/Llamadas/Novedades/Herramientas):
   exclusion_zonas_ventana: [{ top: 0.9, left: 0, width: 1, height: 0.1 }],
-  // A qué ventanas aplicar las zonas relativas (por título; vacío = usa ventanas_titulos):
+  // A qué ventanas aplicar: por PROGRAMA (nombre de proceso, sin .exe) y/o por título.
+  exclusion_procesos: ['scrcpy', 'whatsapp'],
+  // Por título (por si las ventanas no son de esos programas; vacío = usa ventanas_titulos):
   exclusion_titulos: [],
   // Zonas absolutas en píxeles del frame capturado (opcional): { top,left,width,height }
   exclusion_zonas_absolutas: [],
