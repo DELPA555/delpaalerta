@@ -333,12 +333,13 @@
       $('btnZonas').onclick = async () => {
         const r = await ipcRenderer.invoke('ui:editZones')
         await load()
-        if (r && r.ok) say(`${r.count} zona(s) marcada(s) ✓`, true)
+        if (r && r.error) say('No se pudo abrir el editor: ' + r.error, false)
+        else say(((r && r.count) || 0) + ' zona(s) marcada(s)', true)
       }
       $('btnZonasClear').onclick = async () => {
-        await ipcRenderer.invoke('ui:clearZones')
+        const r = await ipcRenderer.invoke('ui:clearZones')
         await load()
-        say('Zonas borradas', true)
+        say(r && r.ok ? 'Zonas borradas' : 'No se pudieron borrar', r && r.ok)
       }
       $('btnTest').onclick = () => ipcRenderer.invoke('ui:testSound', $('sonido').value)
       $('btnPause').onclick = async () => {
