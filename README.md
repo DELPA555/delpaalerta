@@ -33,9 +33,12 @@ escalón, suma 1 repetición cada 2 minutos. Al atender (desaparece el círculo)
 se resetea. Círculos simultáneos escalan independientes.
 
 ### Banner emergente (franja superior)
-Además del círculo verde, detecta un **banner** que aparece arriba, por **cambio
-de píxeles** en esa franja (sin color calibrado aún). Región y sensibilidad
-configurables; desactivado por defecto.
+Además del círculo verde, puede detectar un **banner** que aparece arriba, por
+**cambio de píxeles** (sin color calibrado aún). Es un detector **coarse** →
+viene **desactivado por defecto** y, cuando se activa, es conservador: exige un
+cambio grande (piso de sensibilidad 25%) y **como máximo 1 alerta por minuto**
+(piso de cooldown 60s), para no meter ruido con las actualizaciones normales de
+la lista de chats. Conviene dejarlo apagado hasta poder calibrarlo por color.
 
 ### Ventanas perdidas o minimizadas
 Vigila una lista de títulos esperados (ej. "cargas 1".."cargas 4", "Retiros"):

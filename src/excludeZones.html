@@ -31,8 +31,9 @@
     <img id="shot" />
     <div id="layer"></div>
     <div id="bar">
-      <span class="hint">Arrastrá un recuadro sobre cada barra verde a ignorar</span>
+      <span class="hint" id="hint">Arrastrá un recuadro sobre cada barra verde (se pega a los bordes)</span>
       <span>Zonas: <b id="count">0</b></span>
+      <span id="coords" style="font-family:Consolas,monospace;font-size:12px;color:#9fb0c0;min-width:230px"></span>
       <button id="undo">Deshacer</button>
       <button id="clear">Limpiar</button>
       <button id="cancel">Cancelar (Esc)</button>
@@ -45,16 +46,38 @@
       const layer = document.getElementById('layer')
       const countEl = document.getElementById('count')
       const statusEl = document.getElementById('status')
+      const coordsEl = document.getElementById('coords')
       let W = 0, H = 0
-      const zonas = [] // en px de pantalla (viewport); se convierten a px del frame al guardar
+      const zonas = [] // rects en px de VIEWPORT (ya "snapeados"); se pasan a px del frame al guardar
+      const SNAP = 16 // px: cerca de un borde, la zona se pega al borde
 
       function status(msg, error) {
         statusEl.textContent = msg || ''
         statusEl.style.color = error ? '#ff6b6b' : '#79e4aa'
       }
 
+      const snapX = (v) => (v <= SNAP ? 0 : v >= window.innerWidth - SNAP ? window.innerWidth : v)
+      const snapY = (v) => (v <= SNAP ? 0 : v >= window.innerHeight - SNAP ? window.innerHeight : v)
+      function rectFrom(ax, ay, bx, by) {
+        ax = snapX(ax); bx = snapX(bx); ay = snapY(ay); by = snapY(by)
+        return { x: Math.min(ax, bx), y: Math.min(ay, by), w: Math.abs(bx - ax), h: Math.abs(by - ay) }
+      }
+      // viewport (CSS px) → frame (px físicos guardados)
+      function toFrame(r) {
+        const rx = W / window.innerWidth, ry = H / window.innerHeight
+        return {
+          left: Math.round(r.x * rx), top: Math.round(r.y * ry),
+          width: Math.round(r.w * rx), height: Math.round(r.h * ry)
+        }
+      }
+      function showCoords(r) {
+        const f = toFrame(r)
+        coordsEl.textContent = `izq ${f.left} · arr ${f.top} · der ${f.left + f.width} · ab ${f.top + f.height}`
+      }
+
       ipcRenderer.on('zones:image', (_e, { dataURL, w, h }) => {
         W = w; H = h; shot.src = dataURL
+        document.getElementById('hint').textContent = `Pantalla ${w}×${h} · arrastrá sobre cada barra verde (se pega a los bordes)`
         console.log('[zonas] imagen recibida', w, 'x', h)
       })
 
@@ -65,26 +88,26 @@
         drawing = { x: e.clientX, y: e.clientY }
         previewEl = document.createElement('div')
         previewEl.className = 'zona'
-        previewEl.style.left = e.clientX + 'px'
-        previewEl.style.top = e.clientY + 'px'
         layer.appendChild(previewEl)
       })
       window.addEventListener('mousemove', (e) => {
         if (!drawing || !previewEl) return
-        const x = Math.min(drawing.x, e.clientX), y = Math.min(drawing.y, e.clientY)
-        const w = Math.abs(e.clientX - drawing.x), h = Math.abs(e.clientY - drawing.y)
-        previewEl.style.left = x + 'px'; previewEl.style.top = y + 'px'
-        previewEl.style.width = w + 'px'; previewEl.style.height = h + 'px'
+        const r = rectFrom(drawing.x, drawing.y, e.clientX, e.clientY)
+        previewEl.style.left = r.x + 'px'; previewEl.style.top = r.y + 'px'
+        previewEl.style.width = r.w + 'px'; previewEl.style.height = r.h + 'px'
+        showCoords(r)
       })
       window.addEventListener('mouseup', (e) => {
         if (!drawing || !previewEl) return
-        const x = Math.min(drawing.x, e.clientX), y = Math.min(drawing.y, e.clientY)
-        const w = Math.abs(e.clientX - drawing.x), h = Math.abs(e.clientY - drawing.y)
-        if (w >= 6 && h >= 6) {
-          zonas.push({ x, y, w, h })
+        const r = rectFrom(drawing.x, drawing.y, e.clientX, e.clientY)
+        if (r.w >= 6 && r.h >= 6) {
+          previewEl.style.left = r.x + 'px'; previewEl.style.top = r.y + 'px'
+          previewEl.style.width = r.w + 'px'; previewEl.style.height = r.h + 'px'
+          zonas.push(r)
           countEl.textContent = zonas.length
-          status('Zona agregada')
-          console.log('[zonas] agregada', { x, y, w, h }, 'total', zonas.length)
+          const f = toFrame(r)
+          status(`Zona agregada (ab ${f.top + f.height})`)
+          console.log('[zonas] agregada frame=', f, 'total', zonas.length)
         } else {
           previewEl.remove()
           console.log('[zonas] recuadro muy chico, descartado')
@@ -110,11 +133,7 @@
         console.log('[zonas] click Guardar. zonas=', zonas.length, 'W/H=', W, H)
         if (!zonas.length) return status('Marcá al menos una zona.', true)
         if (!W || !H) return status('No se cargó la imagen; cerrá y reintentá.', true)
-        const rx = W / window.innerWidth, ry = H / window.innerHeight
-        const out = zonas.map((z) => ({
-          left: Math.round(z.x * rx), top: Math.round(z.y * ry),
-          width: Math.round(z.w * rx), height: Math.round(z.h * ry)
-        }))
+        const out = zonas.map(toFrame)
         console.log('[zonas] enviando a main:', out)
         status('Guardando…')
         try {

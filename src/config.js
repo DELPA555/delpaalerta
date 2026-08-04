@@ -40,12 +40,14 @@ const DEFAULTS = {
   // La escalada sólo aplica si la PC estuvo inactiva al menos estos segundos
   segundos_inactividad_para_escalar: 20,
 
-  // (5) Banner emergente en la franja superior (por cambio de píxeles)
+  // (5) Banner emergente en la franja superior (por cambio de píxeles).
+  // Detector COARSE (sin color calibrado) → apagado por defecto y conservador:
+  // hasta que se calibre por color, prioriza no meter ruido.
   banner_habilitado: false,
   banner_region: { top: 0, left: 0, width: 0, height: 110 }, // width 0 = todo el ancho
   banner_umbral_pixel: 40, // delta de luminancia por píxel para contarlo "cambiado"
-  banner_sensibilidad: 0.12, // fracción de la franja que debe cambiar
-  banner_cooldown_seg: 6,
+  banner_sensibilidad: 0.25, // fracción de la franja que debe cambiar (piso 0.25 en código)
+  banner_cooldown_seg: 60, // máx 1 alerta/min (piso 60s en código)
 
   // (6) Ventanas esperadas a monitorear (vacío = no monitorear)
   ventanas_titulos: [], // ej. ["cargas 1","cargas 2","cargas 3","cargas 4","Retiros"]

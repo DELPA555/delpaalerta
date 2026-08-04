@@ -91,14 +91,18 @@ class WindowsWatcher {
   constructor() {
     this.problemSince = {}
     this.lastAlert = {}
+    this.seenEver = {} // sólo alertamos por PERDER una ventana que vimos abierta alguna vez
   }
 
   // Usa la cache (no enumera). cfg + fire(mensaje). No hace nada sin títulos.
-  check(cfg, fire) {
+  // winsOverride: sólo para tests (default = cache real).
+  check(cfg, fire, winsOverride) {
     const titulos = Array.isArray(cfg.ventanas_titulos) ? cfg.ventanas_titulos.filter(Boolean) : []
     if (!titulos.length) return
-    const wins = _cache
+    const wins = winsOverride || _cache
     if (!wins || !wins.length) return
+    const { log } = require('./logger')
+    const diag = !!cfg.diagnostico
     const now = Date.now()
     const umbralMs = (Number(cfg.ventanas_umbral_seg) || 15) * 1000
     const cooldownMs = (Number(cfg.ventanas_cooldown_seg) || 30) * 1000
@@ -106,20 +110,38 @@ class WindowsWatcher {
     for (const esperado of titulos) {
       const needle = String(esperado).toLowerCase()
       const match = wins.find((w) => w.title.toLowerCase().includes(needle))
-      const problema = !match || match.min
+      const visible = !!match && !match.min
+      if (visible) this.seenEver[esperado] = true
+      const problema = !visible
+      const motivo = !match ? 'no está abierta' : 'está minimizada'
+
       if (problema) {
-        if (!this.problemSince[esperado]) this.problemSince[esperado] = now
+        // Sólo alertamos si esa ventana estuvo abierta alguna vez (evita el spam de
+        // títulos que nunca son ventanas locales, ej. escritorio remoto).
+        if (!this.seenEver[esperado]) {
+          if (diag) log(`[diag ventanas] "${esperado}" ${motivo} pero NUNCA se vio abierta → sin alerta (¿título correcto? ¿es ventana local?)`)
+          continue
+        }
+        if (!this.problemSince[esperado]) {
+          this.problemSince[esperado] = now
+          if (diag) log(`[diag ventanas] "${esperado}" ${motivo} → arranca el conteo (umbral ${Math.round(umbralMs / 1000)}s)`)
+        }
         const dur = now - this.problemSince[esperado]
         if (dur >= umbralMs) {
           const last = this.lastAlert[esperado] || 0
           if (now - last >= cooldownMs) {
             this.lastAlert[esperado] = now
-            const motivo = !match ? 'no está abierta' : 'está minimizada'
+            log(`[ventanas] ALERTA: "${esperado}" ${motivo} (tras ${Math.round(dur / 1000)}s; umbral ${Math.round(umbralMs / 1000)}s)`)
             fire(`Se perdió de vista: ${esperado} (${motivo})`)
+          } else if (diag) {
+            log(`[diag ventanas] "${esperado}" ${motivo}: en cooldown (faltan ${Math.round((cooldownMs - (now - last)) / 1000)}s)`)
           }
+        } else if (diag) {
+          log(`[diag ventanas] "${esperado}" ${motivo}: esperando ${Math.round(dur / 1000)}s de ${Math.round(umbralMs / 1000)}s`)
         }
       } else if (this.problemSince[esperado]) {
-        require('./logger').log(`[ventanas] Recuperada: ${esperado}`)
+        // Restaurada → reset + log SILENCIOSO (nunca suena ni muestra aviso)
+        log(`[ventanas] "${esperado}" restaurada — sin alerta`)
         delete this.problemSince[esperado]
         delete this.lastAlert[esperado]
       }

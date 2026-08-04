@@ -60,8 +60,11 @@ class BannerDetector {
       if (Math.abs(cur[i] - prev[i]) > umbral) cambiados++
     }
     const frac = cambiados / cur.length
-    if (frac >= (Number(cfg.banner_sensibilidad) || 0.12)) {
-      const cd = (Number(cfg.banner_cooldown_seg) || 6) * 1000
+    // Pisos de seguridad (es un detector coarse, sin color calibrado): requiere un
+    // cambio grande y no más de una alerta por minuto, aunque el config pida menos.
+    const sens = Math.max(0.25, Number(cfg.banner_sensibilidad) || 0.25)
+    if (frac >= sens) {
+      const cd = Math.max(60, Number(cfg.banner_cooldown_seg) || 60) * 1000
       if (now - this.lastAlert >= cd) {
         this.lastAlert = now
         return true
