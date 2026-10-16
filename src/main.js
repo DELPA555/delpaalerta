@@ -36,6 +36,9 @@ let nextSlot = 0 // agenda global de reproducción (espaciado entre beeps)
 let settingsWin = null
 let activationWin = null
 let zoneWin = null
+let zoneModo = 'exclusion' // modo del editor abierto: 'exclusion' | 'analisis'
+let zoneFrame = null // { w, h } del frame con que se abrió el editor (para guardar resolución)
+let showZonesWin = null
 let licenseState = null
 let avisoMostrado = false
 
@@ -132,6 +135,57 @@ function computeExclusions() {
   return out
 }
 
+// Zonas de ANÁLISIS (inclusión) en coordenadas del FRAME capturado. Vacío = se
+// analiza toda la pantalla (retrocompatible).
+function computeAnalysisZones() {
+  const out = []
+  for (const z of cfg.zonas_analisis || []) {
+    if (!z || !(Number(z.width) > 0) || !(Number(z.height) > 0)) continue
+    out.push({
+      x0: z.left | 0,
+      y0: z.top | 0,
+      x1: (z.left | 0) + (z.width | 0),
+      y1: (z.top | 0) + (z.height | 0)
+    })
+  }
+  return out
+}
+
+// Avisa (log + Notification) una sola vez si hay zonas de análisis guardadas con
+// una resolución distinta de la pantalla actual: en vez de aplicar coordenadas
+// desfasadas en silencio, le decimos al usuario que las vuelva a dibujar.
+let analisisResAvisado = false
+function checkAnalysisResolution() {
+  analisisResAvisado = false
+  const zonas = cfg.zonas_analisis || []
+  const res = cfg.zonas_analisis_resolucion
+  if (!zonas.length || !res || !res.w || !res.h) return
+  let actual
+  try {
+    actual = capture.frameSize(cfg.monitor)
+  } catch (_) {
+    return
+  }
+  if (actual.w !== res.w || actual.h !== res.h) {
+    analisisResAvisado = true
+    const msg =
+      `[zonas] ⚠ ANÁLISIS: la pantalla es ${actual.w}×${actual.h} pero las zonas se ` +
+      `dibujaron en ${res.w}×${res.h}. Las coordenadas pueden estar desfasadas; ` +
+      `volvé a marcar las zonas de análisis.`
+    log(msg)
+    try {
+      if (Notification.isSupported()) {
+        new Notification({
+          title: 'Delpa Alertas — zonas de análisis',
+          body: `La resolución cambió (${res.w}×${res.h} → ${actual.w}×${actual.h}). Volvé a marcar las zonas de análisis en Opciones.`
+        }).show()
+      }
+    } catch (_) {
+      /* noop */
+    }
+  }
+}
+
 // ── Loop de detección ─────────────────────────────────────────────────────────
 async function tick() {
   if (cfg.pausado || corriendo) return
@@ -140,7 +194,8 @@ async function tick() {
     const frame = await capture.grab(cfg.monitor)
     if (frame) {
       const exclusions = computeExclusions()
-      const blobs = detect(frame, cfg, exclusions)
+      const analisis = computeAnalysisZones()
+      const blobs = detect(frame, cfg, exclusions, analisis)
       const idle = powerMonitor.getSystemIdleTime()
       const { fires, nuevos } = engine.update(blobs, Date.now(), idle, cfg)
       // Modo diagnóstico: loguea cada blob nuevo (coords, área, aspecto, zona)
@@ -148,9 +203,10 @@ async function tick() {
         for (const b of nuevos) {
           const dentro = exclusions.some((r) => b.x >= r.x0 && b.x < r.x1 && b.y >= r.y0 && b.y < r.y1)
           log(
+            // coords ABSOLUTAS del frame (no relativas a ningún recorte de análisis)
             `[diag] blob nuevo x=${Math.round(b.x)} y=${Math.round(b.y)} area=${b.area} ` +
             `aspecto=${(b.aspect || 0).toFixed(2)} enZonaExclusion=${dentro} ` +
-            `(${exclusions.length} zona/s activas, círculos=${engine.activos})`
+            `(excl=${exclusions.length}, analisis=${analisis.length || 'off'}, círculos=${engine.activos})`
           )
         }
       }
@@ -191,7 +247,12 @@ function startLoop() {
   }
   windowsTimer = setInterval(refrescarVentanas, wms)
   refrescarVentanas() // primer refresco inmediato (para tener bounds ya en el 1er tick)
-  log(`Vigilancia iniciada. intervalo=${ms}ms monitor=${cfg.monitor} sonido=${cfg.sonido} pausado=${cfg.pausado}`)
+  checkAnalysisResolution() // avisa si las zonas de análisis se dibujaron en otra resolución
+  const nAnal = (cfg.zonas_analisis || []).length
+  log(
+    `Vigilancia iniciada. intervalo=${ms}ms monitor=${cfg.monitor} sonido=${cfg.sonido} ` +
+    `pausado=${cfg.pausado} analisis=${nAnal ? nAnal + ' zona(s)' : 'pantalla completa'}`
+  )
 }
 
 function stopLoop() {
@@ -348,27 +409,33 @@ function runCalibrate() {
   })
 }
 
-// Editor visual de zonas de exclusión ABSOLUTAS: captura la pantalla y deja
-// marcar rectángulos (para el caso de escritorio remoto, donde las ventanas de
-// WhatsApp son una sola imagen y no se pueden aislar por programa/título).
-// Abre el editor y resuelve al cerrarse con el estado actual (el guardado real
-// lo hace el handler 'zones:commit', que persiste y aplica con try/catch + log).
-function openZoneEditor() {
+// Editor visual de zonas ABSOLUTAS (modo 'exclusion' o 'analisis'): captura la
+// pantalla y deja marcar/mover/redimensionar/borrar rectángulos. Para exclusión
+// cubre el caso de escritorio remoto (WhatsApp es una sola imagen y no se puede
+// aislar por programa/título); para análisis, define las áreas a incluir.
+// Resuelve al cerrarse con el estado actual (el guardado real lo hace el handler
+// 'zones:commit', que persiste y aplica con try/catch + log).
+function openZoneEditor(modo) {
+  modo = modo === 'analisis' ? 'analisis' : 'exclusion'
+  const listaActual = () =>
+    (modo === 'analisis' ? cfg.zonas_analisis : cfg.exclusion_zonas_absolutas) || []
   return new Promise(async (resolve) => {
     let dataURL, w, h
     try {
       const shot = await capture.grabImage(cfg.monitor)
       if (!shot) {
         log('[zonas] no se pudo capturar la pantalla')
-        return resolve({ count: (cfg.exclusion_zonas_absolutas || []).length, error: 'No se pudo capturar la pantalla.' })
+        return resolve({ count: listaActual().length, error: 'No se pudo capturar la pantalla.' })
       }
       dataURL = shot.image.toDataURL()
       w = shot.width
       h = shot.height
     } catch (e) {
       log('[zonas] error de captura: ' + (e && e.message))
-      return resolve({ count: (cfg.exclusion_zonas_absolutas || []).length, error: e && e.message })
+      return resolve({ count: listaActual().length, error: e && e.message })
     }
+    zoneModo = modo
+    zoneFrame = { w, h }
     zoneWin = new BrowserWindow({
       fullscreen: true,
       frame: false,
@@ -379,12 +446,54 @@ function openZoneEditor() {
     })
     zoneWin.loadFile(path.join(__dirname, 'excludeZones.html'))
     zoneWin.webContents.once('did-finish-load', () => {
-      log('[zonas] editor abierto (' + w + 'x' + h + ')')
-      zoneWin.webContents.send('zones:image', { dataURL, w, h })
+      log('[zonas] editor abierto modo=' + modo + ' (' + w + 'x' + h + ')')
+      zoneWin.webContents.send('zones:image', { dataURL, w, h, modo, existing: listaActual() })
     })
     zoneWin.on('closed', () => {
       zoneWin = null
-      resolve({ count: (cfg.exclusion_zonas_absolutas || []).length })
+      resolve({ count: listaActual().length })
+    })
+  })
+}
+
+// Overlay "Ver zonas activas": dibuja por unos segundos un borde sobre cada zona
+// de análisis (verde) y de exclusión (rojo) tal como se aplican en el frame, para
+// verificar visualmente que cubren lo correcto. Click-through (no molesta).
+function showActiveZones() {
+  return new Promise(async (resolve) => {
+    let w, h
+    try {
+      const fs = capture.frameSize(cfg.monitor)
+      w = fs.w
+      h = fs.h
+    } catch (e) {
+      return resolve({ ok: false, error: 'No se pudo leer la pantalla: ' + (e && e.message) })
+    }
+    const analisis = computeAnalysisZones()
+    const exclusion = computeExclusions()
+    if (!analisis.length && !exclusion.length) {
+      return resolve({ ok: false, error: 'No hay zonas configuradas todavía.' })
+    }
+    if (showZonesWin && !showZonesWin.isDestroyed()) showZonesWin.close()
+    showZonesWin = new BrowserWindow({
+      fullscreen: true,
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      focusable: false,
+      backgroundColor: '#00000000',
+      webPreferences: { nodeIntegration: true, contextIsolation: false }
+    })
+    try { showZonesWin.setIgnoreMouseEvents(true) } catch (_) { /* noop */ }
+    showZonesWin.loadFile(path.join(__dirname, 'showZones.html'))
+    showZonesWin.webContents.once('did-finish-load', () => {
+      log(`[zonas] mostrando activas: analisis=${analisis.length} exclusion=${exclusion.length}`)
+      showZonesWin.webContents.send('showzones:data', { w, h, analisis, exclusion, segundos: 4 })
+    })
+    showZonesWin.on('closed', () => {
+      showZonesWin = null
+      resolve({ ok: true, analisis: analisis.length, exclusion: exclusion.length })
     })
   })
 }
@@ -422,14 +531,24 @@ function registerIpc() {
   })
   ipcMain.handle('ui:calibrate', () => runCalibrate())
   ipcMain.handle('ui:checkUpdates', () => checkUpdates(true))
-  // Zonas de exclusión absolutas (editor visual)
-  ipcMain.handle('ui:editZones', () => openZoneEditor())
-  // Guardado real de las zonas (invoke desde el editor → confirma o devuelve error)
-  ipcMain.handle('zones:commit', (_e, zones) => {
+  // Editor visual de zonas absolutas. modo: 'exclusion' (default) | 'analisis'
+  ipcMain.handle('ui:editZones', (_e, modo) => openZoneEditor(modo))
+  ipcMain.handle('ui:editAnalysisZones', () => openZoneEditor('analisis'))
+  ipcMain.handle('ui:showActiveZones', () => showActiveZones())
+  // Guardado real de las zonas (invoke desde el editor → confirma o devuelve error).
+  // Acepta { modo, zones } (nuevo) o un array suelto (retrocompatible = exclusión).
+  ipcMain.handle('zones:commit', (_e, payload) => {
     try {
-      log('[zonas] commit recibido: ' + (Array.isArray(zones) ? zones.length + ' zona(s)' : typeof zones))
+      let modo = 'exclusion'
+      let zones = payload
+      if (payload && !Array.isArray(payload) && typeof payload === 'object') {
+        modo = payload.modo === 'analisis' ? 'analisis' : 'exclusion'
+        zones = payload.zones
+      }
+      const etiqueta = modo === 'analisis' ? 'ANALISIS' : 'EXCLUSION'
+      log('[zonas] commit recibido modo=' + modo + ': ' + (Array.isArray(zones) ? zones.length + ' zona(s)' : typeof zones))
       if (!Array.isArray(zones) || zones.length === 0) {
-        return { ok: false, error: 'No marcaste ninguna zona (arrastrá un recuadro sobre cada barra).' }
+        return { ok: false, error: 'No marcaste ninguna zona (arrastrá un recuadro).' }
       }
       const limpio = zones
         .filter((z) => z && Number(z.width) > 0 && Number(z.height) > 0)
@@ -440,10 +559,19 @@ function registerIpc() {
           height: Math.round(Number(z.height)) || 0
         }))
       if (!limpio.length) return { ok: false, error: 'Las zonas marcadas no tienen un tamaño válido.' }
-      store.set('exclusion_zonas_absolutas', limpio)
-      if (!cfg.exclusion_habilitado) store.set('exclusion_habilitado', true)
-      applyRuntime()
-      log('[zonas] GUARDADAS ' + limpio.length + ' zona(s): ' + JSON.stringify(limpio))
+      if (modo === 'analisis') {
+        store.set('zonas_analisis', limpio)
+        // Resolución del frame con que se dibujaron (del editor; si no, la actual).
+        const res = zoneFrame && zoneFrame.w && zoneFrame.h ? zoneFrame : capture.frameSize(cfg.monitor)
+        store.set('zonas_analisis_resolucion', { w: res.w | 0, h: res.h | 0 })
+        applyRuntime()
+        log(`[zonas] ANALISIS guardadas ${limpio.length} zona(s): ${JSON.stringify(limpio)} @ ${res.w}x${res.h}`)
+      } else {
+        store.set('exclusion_zonas_absolutas', limpio)
+        if (!cfg.exclusion_habilitado) store.set('exclusion_habilitado', true)
+        applyRuntime()
+        log(`[zonas] ${etiqueta} GUARDADAS ${limpio.length} zona(s): ${JSON.stringify(limpio)}`)
+      }
       return { ok: true, count: limpio.length }
     } catch (err) {
       log('[zonas] ERROR al guardar: ' + (err && err.message))
@@ -453,14 +581,29 @@ function registerIpc() {
   ipcMain.on('zones:close', () => {
     if (zoneWin && !zoneWin.isDestroyed()) zoneWin.close()
   })
+  ipcMain.on('showzones:close', () => {
+    if (showZonesWin && !showZonesWin.isDestroyed()) showZonesWin.close()
+  })
   ipcMain.handle('ui:clearZones', () => {
     try {
       store.set('exclusion_zonas_absolutas', [])
       applyRuntime()
-      log('[zonas] zonas absolutas borradas')
+      log('[zonas] zonas absolutas de exclusión borradas')
       return { ok: true, count: 0 }
     } catch (e) {
       log('[zonas] error al borrar: ' + (e && e.message))
+      return { ok: false, error: e && e.message }
+    }
+  })
+  ipcMain.handle('ui:clearAnalysisZones', () => {
+    try {
+      store.set('zonas_analisis', [])
+      store.set('zonas_analisis_resolucion', null)
+      applyRuntime()
+      log('[zonas] ANALISIS borradas (se vuelve a analizar toda la pantalla)')
+      return { ok: true, count: 0 }
+    } catch (e) {
+      log('[zonas] error al borrar análisis: ' + (e && e.message))
       return { ok: false, error: e && e.message }
     }
   })

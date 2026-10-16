@@ -218,6 +218,17 @@
           <span class="hint" id="zonasCount">0 zonas</span>
         </div>
         <div class="hint">Si mirás todo por escritorio remoto (Google Remote Desktop), dibujá un recuadro sobre cada barra verde a ignorar. Se guardan como posiciones fijas.</div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:14px 0" />
+        <label>Zonas de análisis (incluir) — solo se analiza lo marcado</label>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
+          <button id="btnAnalisis" type="button">🎯 Marcar zonas de análisis</button>
+          <button id="btnAnalisisClear" type="button">Borrar</button>
+          <button id="btnVerZonas" type="button">👁 Ver zonas activas</button>
+          <span class="hint" id="analisisCount">Pantalla completa</span>
+        </div>
+        <div class="hint" id="analisisRes"></div>
+        <div class="hint">Dibujá un recuadro sobre la lista de chats de cada ventana (lo que te interesa). Todo lo de afuera se ignora por completo: menos falsos positivos y menos CPU. Si no marcás ninguna, se analiza toda la pantalla.</div>
       </div>
 
       <div class="btns" style="margin-top:4px">
@@ -285,6 +296,12 @@
         const zh = (cfg.exclusion_zonas_ventana && cfg.exclusion_zonas_ventana[0] && cfg.exclusion_zonas_ventana[0].height) || 0.1
         $('exclusion_franja_pct').value = Math.round(zh * 100)
         $('zonasCount').textContent = ((cfg.exclusion_zonas_absolutas || []).length) + ' zonas'
+        const nAnal = (cfg.zonas_analisis || []).length
+        $('analisisCount').textContent = nAnal ? (nAnal + ' zona(s) de análisis') : 'Pantalla completa'
+        const resA = cfg.zonas_analisis_resolucion
+        $('analisisRes').textContent = (nAnal && resA && resA.w)
+          ? ('Dibujadas en ' + resA.w + '×' + resA.h + ' px. Si cambiás de monitor o resolución, volvé a marcarlas.')
+          : ''
         setEstado(cfg.pausado)
         paintSwatches()
       }
@@ -348,6 +365,22 @@
         const r = await ipcRenderer.invoke('ui:clearZones')
         await load()
         say(r && r.ok ? 'Zonas borradas' : 'No se pudieron borrar', r && r.ok)
+      }
+      $('btnAnalisis').onclick = async () => {
+        const r = await ipcRenderer.invoke('ui:editAnalysisZones')
+        await load()
+        if (r && r.error) say('No se pudo abrir el editor: ' + r.error, false)
+        else say(((r && r.count) || 0) + ' zona(s) de análisis', true)
+      }
+      $('btnAnalisisClear').onclick = async () => {
+        const r = await ipcRenderer.invoke('ui:clearAnalysisZones')
+        await load()
+        say(r && r.ok ? 'Zonas de análisis borradas (se analiza toda la pantalla)' : 'No se pudieron borrar', r && r.ok)
+      }
+      $('btnVerZonas').onclick = async () => {
+        const r = await ipcRenderer.invoke('ui:showActiveZones')
+        if (r && r.ok) say(`Mostrando ${r.analisis} de análisis y ${r.exclusion} de exclusión…`, true)
+        else say((r && r.error) || 'No se pudieron mostrar las zonas', false)
       }
       $('btnTest').onclick = () => ipcRenderer.invoke('ui:testSound', $('sonido').value)
       $('btnPause').onclick = async () => {

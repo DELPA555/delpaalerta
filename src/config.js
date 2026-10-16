@@ -77,6 +77,15 @@ const DEFAULTS = {
   // Zonas absolutas en píxeles del frame capturado (opcional): { top,left,width,height }
   exclusion_zonas_absolutas: [],
 
+  // Zonas de ANÁLISIS (inclusión): si hay al menos una, la detección se limita a
+  // esas áreas y TODO lo de afuera se ignora (inverso de la exclusión). Las zonas
+  // de exclusión se siguen aplicando DENTRO de estas. Vacío = analizar toda la
+  // pantalla (comportamiento histórico, retrocompatible).
+  // Cada zona en px físicos del frame capturado: { left, top, width, height }.
+  zonas_analisis: [],
+  // Resolución del frame con la que se dibujaron (para avisar si cambió el monitor).
+  zonas_analisis_resolucion: null, // { w, h } | null
+
   pausado: false
 }
 

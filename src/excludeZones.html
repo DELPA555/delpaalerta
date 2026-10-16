@@ -2,14 +2,41 @@
 <html lang="es">
   <head>
     <meta charset="utf-8" />
-    <title>Marcar zonas a excluir</title>
+    <title>Marcar zonas</title>
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #000; user-select: none; }
       #shot { position: absolute; inset: 0; width: 100vw; height: 100vh; object-fit: fill; -webkit-user-drag: none; }
       #layer { position: absolute; inset: 0; cursor: crosshair; }
+
+      /* Color por modo: rojo = exclusión, verde = análisis (inclusión) */
       .zona {
-        position: absolute; border: 2px solid #ff5a5a; background: rgba(255,90,90,.22); pointer-events: none;
+        position: absolute; box-sizing: border-box;
+        border: 2px solid var(--zc, #ff5a5a); background: var(--zf, rgba(255,90,90,.22));
+        cursor: move;
       }
+      .zona.sel { border-style: dashed; box-shadow: 0 0 0 1px #fff inset; }
+      .zona .num {
+        position: absolute; top: 2px; left: 4px; font: 700 13px/1 "Segoe UI", sans-serif;
+        color: #fff; text-shadow: 0 1px 2px #000; pointer-events: none;
+      }
+      .zona .del {
+        position: absolute; top: -11px; right: -11px; width: 22px; height: 22px; border-radius: 50%;
+        background: #111820; color: #ff7676; border: 1px solid #39424d; font: 700 13px/20px "Segoe UI", sans-serif;
+        text-align: center; cursor: pointer; display: none;
+      }
+      .zona.sel .del { display: block; }
+      .zona .h {
+        position: absolute; width: 12px; height: 12px; background: #fff; border: 1px solid #333; border-radius: 2px;
+        display: none;
+      }
+      .zona.sel .h { display: block; }
+      .zona .h.nw { left: -6px; top: -6px; cursor: nwse-resize; }
+      .zona .h.ne { right: -6px; top: -6px; cursor: nesw-resize; }
+      .zona .h.sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
+      .zona .h.se { right: -6px; bottom: -6px; cursor: nwse-resize; }
+
+      #preview { position: absolute; box-sizing: border-box; border: 2px dashed var(--zc, #ff5a5a); background: var(--zf, rgba(255,90,90,.18)); pointer-events: none; display: none; }
+
       #bar {
         position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
         display: flex; gap: 8px; align-items: center; z-index: 10;
@@ -18,7 +45,9 @@
       }
       #bar b { color: #79e4aa; }
       #bar .hint { color: #9fb0c0; font-size: 12px; margin-right: 6px; }
+      #title { font-weight: 700; margin-right: 4px; }
       #status { font-size: 12px; min-width: 40px; }
+      #coords { font-family: Consolas, monospace; font-size: 12px; color: #9fb0c0; min-width: 230px; }
       button {
         background: #1a2430; color: #e7eef5; border: 1px solid #24303d; border-radius: 8px;
         padding: 7px 12px; font-size: 13px; cursor: pointer;
@@ -30,10 +59,12 @@
   <body>
     <img id="shot" />
     <div id="layer"></div>
+    <div id="preview"></div>
     <div id="bar">
-      <span class="hint" id="hint">Arrastrá un recuadro sobre cada barra verde (se pega a los bordes)</span>
+      <span id="title">Zonas</span>
+      <span class="hint" id="hint">Arrastrá para dibujar; click para seleccionar, mover o redimensionar</span>
       <span>Zonas: <b id="count">0</b></span>
-      <span id="coords" style="font-family:Consolas,monospace;font-size:12px;color:#9fb0c0;min-width:230px"></span>
+      <span id="coords"></span>
       <button id="undo">Deshacer</button>
       <button id="clear">Limpiar</button>
       <button id="cancel">Cancelar (Esc)</button>
@@ -44,12 +75,19 @@
       const { ipcRenderer } = require('electron')
       const shot = document.getElementById('shot')
       const layer = document.getElementById('layer')
+      const previewEl = document.getElementById('preview')
       const countEl = document.getElementById('count')
       const statusEl = document.getElementById('status')
       const coordsEl = document.getElementById('coords')
-      let W = 0, H = 0
-      const zonas = [] // rects en px de VIEWPORT (ya "snapeados"); se pasan a px del frame al guardar
-      const SNAP = 16 // px: cerca de un borde, la zona se pega al borde
+      const titleEl = document.getElementById('title')
+      let W = 0, H = 0        // tamaño del frame capturado (px físicos)
+      let modo = 'exclusion'  // 'exclusion' | 'analisis'
+      const SNAP = 16         // px: cerca de un borde, la zona se pega al borde
+      const MIN = 6           // tamaño mínimo (viewport px) para aceptar una zona
+
+      // Cada zona: { x, y, w, h } en px de VIEWPORT + su div. Se pasan a px del frame al guardar.
+      const zonas = []
+      let selIdx = -1
 
       function status(msg, error) {
         statusEl.textContent = msg || ''
@@ -58,6 +96,9 @@
 
       const snapX = (v) => (v <= SNAP ? 0 : v >= window.innerWidth - SNAP ? window.innerWidth : v)
       const snapY = (v) => (v <= SNAP ? 0 : v >= window.innerHeight - SNAP ? window.innerHeight : v)
+      const clampX = (v) => Math.max(0, Math.min(window.innerWidth, v))
+      const clampY = (v) => Math.max(0, Math.min(window.innerHeight, v))
+
       function rectFrom(ax, ay, bx, by) {
         ax = snapX(ax); bx = snapX(bx); ay = snapY(ay); by = snapY(by)
         return { x: Math.min(ax, bx), y: Math.min(ay, by), w: Math.abs(bx - ax), h: Math.abs(by - ay) }
@@ -70,74 +111,187 @@
           width: Math.round(r.w * rx), height: Math.round(r.h * ry)
         }
       }
-      function showCoords(r) {
-        const f = toFrame(r)
-        coordsEl.textContent = `izq ${f.left} · arr ${f.top} · der ${f.left + f.width} · ab ${f.top + f.height}`
+      // frame (px físicos) → viewport (CSS px)  [para precargar zonas existentes]
+      function toView(f) {
+        const rx = window.innerWidth / W, ry = window.innerHeight / H
+        return { x: (f.left | 0) * rx, y: (f.top | 0) * ry, w: (f.width | 0) * rx, h: (f.height | 0) * ry }
       }
 
-      ipcRenderer.on('zones:image', (_e, { dataURL, w, h }) => {
-        W = w; H = h; shot.src = dataURL
-        document.getElementById('hint').textContent = `Pantalla ${w}×${h} · arrastrá sobre cada barra verde (se pega a los bordes)`
-        console.log('[zonas] imagen recibida', w, 'x', h)
-      })
-
-      let drawing = null, previewEl = null
-      window.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return
-        if (e.target && e.target.closest && e.target.closest('#bar')) return // no dibujar desde la barra
-        drawing = { x: e.clientX, y: e.clientY }
-        previewEl = document.createElement('div')
-        previewEl.className = 'zona'
-        layer.appendChild(previewEl)
-      })
-      window.addEventListener('mousemove', (e) => {
-        if (!drawing || !previewEl) return
-        const r = rectFrom(drawing.x, drawing.y, e.clientX, e.clientY)
-        previewEl.style.left = r.x + 'px'; previewEl.style.top = r.y + 'px'
-        previewEl.style.width = r.w + 'px'; previewEl.style.height = r.h + 'px'
-        showCoords(r)
-      })
-      window.addEventListener('mouseup', (e) => {
-        if (!drawing || !previewEl) return
-        const r = rectFrom(drawing.x, drawing.y, e.clientX, e.clientY)
-        if (r.w >= 6 && r.h >= 6) {
-          previewEl.style.left = r.x + 'px'; previewEl.style.top = r.y + 'px'
-          previewEl.style.width = r.w + 'px'; previewEl.style.height = r.h + 'px'
-          zonas.push(r)
-          countEl.textContent = zonas.length
-          const f = toFrame(r)
-          status(`Zona agregada (ab ${f.top + f.height})`)
-          console.log('[zonas] agregada frame=', f, 'total', zonas.length)
-        } else {
-          previewEl.remove()
-          console.log('[zonas] recuadro muy chico, descartado')
-        }
-        drawing = null; previewEl = null
-      })
-
-      document.getElementById('undo').onclick = () => {
-        zonas.pop()
-        const divs = layer.querySelectorAll('.zona')
-        if (divs.length) divs[divs.length - 1].remove()
+      function makeDiv() {
+        const d = document.createElement('div')
+        d.className = 'zona'
+        d.innerHTML =
+          '<span class="num"></span><span class="del" title="Borrar (Supr)">×</span>' +
+          '<span class="h nw"></span><span class="h ne"></span><span class="h sw"></span><span class="h se"></span>'
+        layer.appendChild(d)
+        return d
+      }
+      function placeDiv(z) {
+        z.div.style.left = z.x + 'px'; z.div.style.top = z.y + 'px'
+        z.div.style.width = z.w + 'px'; z.div.style.height = z.h + 'px'
+      }
+      function renumber() {
+        zonas.forEach((z, i) => {
+          z.div.querySelector('.num').textContent = (i + 1)
+          z.div.classList.toggle('sel', i === selIdx)
+        })
         countEl.textContent = zonas.length
       }
+      function select(i) { selIdx = i; renumber(); if (i >= 0) showCoords(zonas[i]) }
+      function showCoords(r) {
+        if (!r) { coordsEl.textContent = ''; return }
+        const f = toFrame(r)
+        coordsEl.textContent = `#${zonas.indexOf(r) + 1}  izq ${f.left} · arr ${f.top} · der ${f.left + f.width} · ab ${f.top + f.height}`
+      }
+      function addZona(r) {
+        const z = { x: r.x, y: r.y, w: r.w, h: r.h, div: makeDiv() }
+        placeDiv(z)
+        zonas.push(z)
+        select(zonas.length - 1)
+        return z
+      }
+      function removeAt(i) {
+        if (i < 0 || i >= zonas.length) return
+        zonas[i].div.remove()
+        zonas.splice(i, 1)
+        if (selIdx === i) selIdx = -1
+        else if (selIdx > i) selIdx--
+        renumber()
+        if (selIdx < 0) showCoords(null)
+      }
+
+      ipcRenderer.on('zones:image', (_e, msg) => {
+        const { dataURL, w, h } = msg
+        modo = msg.modo === 'analisis' ? 'analisis' : 'exclusion'
+        W = w; H = h; shot.src = dataURL
+        const esAnalisis = modo === 'analisis'
+        document.documentElement.style.setProperty('--zc', esAnalisis ? '#36d07a' : '#ff5a5a')
+        document.documentElement.style.setProperty('--zf', esAnalisis ? 'rgba(54,208,122,.22)' : 'rgba(255,90,90,.22)')
+        titleEl.textContent = esAnalisis ? 'Zonas de análisis (incluir)' : 'Zonas de exclusión (ignorar)'
+        document.getElementById('hint').textContent =
+          `Pantalla ${w}×${h} · ` +
+          (esAnalisis
+            ? 'dibujá un recuadro sobre la lista de chats de CADA ventana (lo de afuera se ignora)'
+            : 'arrastrá sobre cada barra verde a ignorar') +
+          ' · click para seleccionar/mover/redimensionar'
+        // Precarga de zonas existentes del mismo modo
+        if (Array.isArray(msg.existing)) {
+          for (const f of msg.existing) {
+            const v = toView(f)
+            if (v.w >= 1 && v.h >= 1) { const z = addZona(v); }
+          }
+          select(-1)
+          renumber()
+        }
+        console.log('[zonas] editor', modo, w, 'x', h, 'existentes=', (msg.existing || []).length)
+      })
+
+      // ── Interacción: dibujar / mover / redimensionar ────────────────────────
+      let act = null // { type:'draw'|'move'|'resize', ... }
+
+      function hitZonaIdx(target) {
+        const el = target.closest && target.closest('.zona')
+        if (!el) return -1
+        return zonas.findIndex((z) => z.div === el)
+      }
+
+      layer.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return
+        const t = e.target
+        // Borrar con la ×
+        if (t.classList && t.classList.contains('del')) {
+          const i = hitZonaIdx(t)
+          if (i >= 0) removeAt(i)
+          return
+        }
+        // Handle de resize
+        if (t.classList && t.classList.contains('h')) {
+          const i = hitZonaIdx(t)
+          if (i < 0) return
+          select(i)
+          const z = zonas[i]
+          const corner = t.classList.contains('nw') ? 'nw' : t.classList.contains('ne') ? 'ne' : t.classList.contains('sw') ? 'sw' : 'se'
+          // ancla = esquina opuesta (fija)
+          const ax = (corner === 'nw' || corner === 'sw') ? z.x + z.w : z.x
+          const ay = (corner === 'nw' || corner === 'ne') ? z.y + z.h : z.y
+          act = { type: 'resize', i, ax, ay }
+          e.preventDefault()
+          return
+        }
+        // Cuerpo de una zona → mover
+        const zi = hitZonaIdx(t)
+        if (zi >= 0) {
+          select(zi)
+          const z = zonas[zi]
+          act = { type: 'move', i: zi, dx: e.clientX - z.x, dy: e.clientY - z.y }
+          e.preventDefault()
+          return
+        }
+        // Área vacía → dibujar nueva
+        select(-1)
+        act = { type: 'draw', x: e.clientX, y: e.clientY }
+        previewEl.style.display = 'block'
+        previewEl.style.left = e.clientX + 'px'; previewEl.style.top = e.clientY + 'px'
+        previewEl.style.width = '0px'; previewEl.style.height = '0px'
+      })
+
+      window.addEventListener('mousemove', (e) => {
+        if (!act) return
+        if (act.type === 'draw') {
+          const r = rectFrom(act.x, act.y, e.clientX, e.clientY)
+          previewEl.style.left = r.x + 'px'; previewEl.style.top = r.y + 'px'
+          previewEl.style.width = r.w + 'px'; previewEl.style.height = r.h + 'px'
+          coordsEl.textContent = `izq ${toFrame(r).left} · arr ${toFrame(r).top} · der ${toFrame(r).left + toFrame(r).width} · ab ${toFrame(r).top + toFrame(r).height}`
+        } else if (act.type === 'move') {
+          const z = zonas[act.i]
+          z.x = clampX(e.clientX - act.dx); z.y = clampY(e.clientY - act.dy)
+          z.x = Math.min(z.x, window.innerWidth - z.w); z.y = Math.min(z.y, window.innerHeight - z.h)
+          placeDiv(z); showCoords(z)
+        } else if (act.type === 'resize') {
+          const z = zonas[act.i]
+          const r = rectFrom(act.ax, act.ay, e.clientX, e.clientY)
+          z.x = r.x; z.y = r.y; z.w = r.w; z.h = r.h
+          placeDiv(z); showCoords(z)
+        }
+      })
+
+      window.addEventListener('mouseup', () => {
+        if (!act) return
+        if (act.type === 'draw') {
+          previewEl.style.display = 'none'
+          const r = rectFrom(act.x, act.y, parseFloat(previewEl.style.left) + parseFloat(previewEl.style.width), parseFloat(previewEl.style.top) + parseFloat(previewEl.style.height))
+          if (r.w >= MIN && r.h >= MIN) {
+            const z = addZona(r)
+            status('Zona ' + zonas.length + ' agregada')
+            console.log('[zonas] agregada frame=', toFrame(z), 'total', zonas.length)
+          }
+        } else if (act.type === 'resize') {
+          const z = zonas[act.i]
+          if (z.w < MIN || z.h < MIN) { z.w = Math.max(z.w, MIN); z.h = Math.max(z.h, MIN); placeDiv(z) }
+        }
+        act = null
+      })
+
+      document.getElementById('undo').onclick = () => removeAt(zonas.length - 1)
       document.getElementById('clear').onclick = () => {
-        zonas.length = 0
-        layer.querySelectorAll('.zona').forEach((d) => d.remove())
-        countEl.textContent = '0'
+        while (zonas.length) { zonas[zonas.length - 1].div.remove(); zonas.pop() }
+        selIdx = -1; renumber(); showCoords(null)
       }
       document.getElementById('cancel').onclick = () => ipcRenderer.send('zones:close')
-      window.addEventListener('keydown', (e) => { if (e.key === 'Escape') ipcRenderer.send('zones:close') })
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') ipcRenderer.send('zones:close')
+        else if ((e.key === 'Delete' || e.key === 'Backspace') && selIdx >= 0) { e.preventDefault(); removeAt(selIdx) }
+      })
 
       document.getElementById('save').onclick = async () => {
-        console.log('[zonas] click Guardar. zonas=', zonas.length, 'W/H=', W, H)
+        console.log('[zonas] click Guardar. modo=', modo, 'zonas=', zonas.length, 'W/H=', W, H)
         if (!zonas.length) return status('Marcá al menos una zona.', true)
         if (!W || !H) return status('No se cargó la imagen; cerrá y reintentá.', true)
         const out = zonas.map(toFrame)
         console.log('[zonas] enviando a main:', out)
         status('Guardando…')
         try {
-          const r = await ipcRenderer.invoke('zones:commit', out)
+          const r = await ipcRenderer.invoke('zones:commit', { modo, zones: out })
           console.log('[zonas] respuesta de main:', r)
           if (r && r.ok) {
             status('Guardado ✓ (' + r.count + ')')

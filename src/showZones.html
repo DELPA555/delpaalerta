@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Zonas activas</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; user-select: none; }
+      #layer { position: absolute; inset: 0; }
+      .z {
+        position: absolute; box-sizing: border-box; border: 3px solid #000;
+        font: 700 14px/1 "Segoe UI", sans-serif;
+      }
+      .z.analisis { border-color: #36d07a; background: rgba(54,208,122,.10); }
+      .z.exclusion { border-color: #ff5a5a; background: rgba(255,90,90,.12); }
+      .z .tag {
+        position: absolute; top: -2px; left: -2px; padding: 2px 7px; color: #04110c;
+        text-shadow: none; border-bottom-right-radius: 7px;
+      }
+      .z.analisis .tag { background: #36d07a; }
+      .z.exclusion .tag { background: #ff5a5a; color: #230505; }
+      #ttl {
+        position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+        background: rgba(10,14,20,.92); border: 1px solid #24303d; border-radius: 10px;
+        padding: 8px 14px; font-family: "Segoe UI", sans-serif; color: #e7eef5; font-size: 13px;
+      }
+      #ttl b.an { color: #36d07a; } #ttl b.ex { color: #ff5a5a; }
+    </style>
+  </head>
+  <body>
+    <div id="layer"></div>
+    <div id="ttl">Zonas activas · <b class="an">verde = análisis</b> · <b class="ex">rojo = exclusión</b> · se cierra solo</div>
+    <script>
+      const { ipcRenderer } = require('electron')
+      const layer = document.getElementById('layer')
+      ipcRenderer.on('showzones:data', (_e, msg) => {
+        const { w, h, analisis, exclusion, segundos } = msg
+        const rx = window.innerWidth / w, ry = window.innerHeight / h
+        const draw = (arr, cls, label) => {
+          (arr || []).forEach((r, i) => {
+            const d = document.createElement('div')
+            d.className = 'z ' + cls
+            d.style.left = Math.round(r.x0 * rx) + 'px'
+            d.style.top = Math.round(r.y0 * ry) + 'px'
+            d.style.width = Math.round((r.x1 - r.x0) * rx) + 'px'
+            d.style.height = Math.round((r.y1 - r.y0) * ry) + 'px'
+            const tag = document.createElement('span')
+            tag.className = 'tag'
+            tag.textContent = label + ' ' + (i + 1)
+            d.appendChild(tag)
+            layer.appendChild(d)
+          })
+        }
+        draw(analisis, 'analisis', 'A')
+        draw(exclusion, 'exclusion', 'X')
+        setTimeout(() => ipcRenderer.send('showzones:close'), Math.max(1000, (segundos || 4) * 1000))
+      })
+      window.addEventListener('keydown', (e) => { if (e.key === 'Escape') ipcRenderer.send('showzones:close') })
+    </script>
+  </body>
+</html>

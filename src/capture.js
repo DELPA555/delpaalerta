@@ -64,4 +64,12 @@ function captureOrigin(monitorIdx) {
   return { offX: Math.round(d.bounds.x * s), offY: Math.round(d.bounds.y * s), scale: s }
 }
 
-module.exports = { grab, grabImage, captureOrigin }
+// Tamaño en px físicos del frame que produciría grab() para este monitor, sin
+// capturar. Sirve para avisar si cambió la resolución respecto de las zonas.
+function frameSize(monitorIdx) {
+  const d = pickDisplay(monitorIdx)
+  const s = d.scaleFactor || 1
+  return { w: Math.round(d.size.width * s), h: Math.round(d.size.height * s) }
+}
+
+module.exports = { grab, grabImage, captureOrigin, frameSize }
